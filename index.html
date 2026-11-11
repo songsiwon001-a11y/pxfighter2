@@ -570,7 +570,11 @@ function buildLadder(me){
 let runWins=[]; /* 이번 도전에서 실제로 이긴 상대 */
 function endingReady(){return CH.every((c,i)=>i===sel[0].c||runWins.includes(i));}
 function extendLadder(){
-  for(let i=0;i<CH.length;i++)if(CH[i].boss&&i!==sel[0].c&&!isLocked(i)&&!ladder.includes(i))ladder.push(i);
+  /* 이번 도전에서 (나를 뺀) 일반 캐릭터를 모두 이겼으면 보스가 바로 이어서 나온다 */
+  const normalsDone=CH.every((c,i)=>c.boss||i===sel[0].c||runWins.includes(i));
+  let added=false;
+  for(let i=0;i<CH.length;i++)if(CH[i].boss&&i!==sel[0].c&&(normalsDone||!isLocked(i))&&!ladder.includes(i)){ladder.push(i);added=true;}
+  if(added&&normalsDone){toastMsg='BOSS 등장!';toastT=240;}
 }
 function stepSelect(){
   const n=mode===0?1:2;
