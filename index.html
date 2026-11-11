@@ -165,7 +165,7 @@ const CH=[
   nation:'KOREA',flag:'kr',city:'대구',map:[266,98],win:'하준이랑 맨날 붙었더니 나도 강해졌지!',
   gi:'#d8322a',belt:'#111',skin:'#9a6a46',hair:'#f2c94c',band:null,glove:'#c22',shoe:'#222',spd:1.05,pow:1.12,hp:1.05,sc:1.04,
   proj:{col:'#ff8a3a',r:9,sp:3.4,dmg:12},alt:{gi:'#2a6ad0',glove:'#fff',band:null},desc:'라이벌형'},
- {name:'홍쭌기',en:'Hong Jun Gi',
+ {name:'쭌기',en:'Hong Jun Gi',
   nation:'KOREA',flag:'kr',city:'울릉도·독도',map:[352,96],pin:[[310,67],[331,73]],win:'울릉도 바람처럼 거세게 몰아쳤다!',
   gi:'#1f7a8c',belt:'#f4f4f4',skin:'#e8b48a',hair:'#2b1a0e',band:'#f4f4f4',glove:'#e8f0f0',shoe:'#223',spd:.85,pow:1.35,hp:1.25,sc:1.12,
   proj:{col:'#3cc8ff',r:11,sp:2.5,dmg:16},alt:{gi:'#6a8a2a',glove:'#fc3',band:'#fc3'},desc:'파워형'},
@@ -550,7 +550,7 @@ function stepLoading(){
 let mlines={w:'',l:'',t1:20,t2:90,tEnd:180};
 function setMatchLines(){
   const w=matchWinner,l=fighters.find(f=>f!==w);
-  if(mode===0&&w.side===0){recordWin(l.ch);extendLadder();}
+  if(mode===0&&w.side===0){if(!runWins.includes(l.ch))runWins.push(l.ch);recordWin(l.ch);extendLadder();}
   const qw=CH[w.ch];
   mlines.w=(qw&&qw.win)||'내가 이겼다!';
   mlines.l='';                       /* 진 쪽은 말하지 않는다 */
@@ -567,7 +567,8 @@ function buildLadder(me){
   return o;
 }
 /* 엔딩 조건: 상대 가능한 모든 적 + 모든 보스(내가 고른 캐릭터 제외)를 이겨야 한다 */
-function endingReady(){return CH.every((c,i)=>!c.boss||i===sel[0].c||ladder.includes(i));}
+let runWins=[]; /* 이번 도전에서 실제로 이긴 상대 */
+function endingReady(){return CH.every((c,i)=>i===sel[0].c||runWins.includes(i));}
 function extendLadder(){
   for(let i=0;i<CH.length;i++)if(CH[i].boss&&i!==sel[0].c&&!isLocked(i)&&!ladder.includes(i))ladder.push(i);
 }
@@ -593,7 +594,7 @@ function stepSelect(){
     }else if(press[p].u){s.ok=false;sfx('sel');}
   }
   if(mode===0&&sel[0].ok&&!sel[1].ok){
-    ladder=buildLadder(sel[0].c);ladIdx=0;
+    ladder=buildLadder(sel[0].c);ladIdx=0;runWins=[];
     sel[1].c=ladder.length?ladder[0]:sel[0].c;sel[1].ok=true;
   }
   if(sel[0].ok&&sel[1].ok){
@@ -617,7 +618,7 @@ function step(){
     else if(selT>mlines.tEnd&&anyAtk){
       if(mode===0&&matchWinner&&matchWinner.side===0&&ladIdx+1<ladder.length){
         ladIdx++;sel[1].c=ladder[ladIdx];phase='vs';vsT=0;selT=0;sfx('go');
-      }else if(mode===0&&matchWinner&&matchWinner.side===0&&endingReady()){phase='ending';endS=0;endDone=false;sfx('go');}
+      }else if(mode===0&&matchWinner&&matchWinner.side===0&&endingReady()){phase='ending';endS=0;endDone=false;endT=0;endWait=0;sfx('go');}
       else{phase='select';sel[0]={c:0,ok:false};sel[1]={c:1,ok:false};selT=0;}
     }
   }else stepGame();
@@ -1373,7 +1374,7 @@ function drawMatchEnd(){
 /* ---------------- 엔딩 (검은 화면 + 제작진) ----------------
  * 모든 적(보스 포함)을 쓰러뜨리면 나온다. 제작진을 바꾸려면 아래 목록만 고치면 된다. */
 const CREDITS=[
- ['PIXEL FIGHTER 2','title'],['',''],['ALL CLEAR','small'],['',''],['',''],
+ ['PIXEL FIGHTER 2','title'],['',''],['ALL CLEAR','small'],['',''],['모든 제작 : 김하준','big'],['',''],['',''],
  ['제작','role'],['김하준','name'],['',''],
  ['기획','role'],['김하준','name'],['',''],
  ['프로그래밍','role'],['김하준','name'],['',''],
@@ -1381,17 +1382,19 @@ const CREDITS=[
  ['그래픽','role'],['김하준','name'],['',''],
  ['음악 · 효과음','role'],['김하준','name'],['',''],
  ['테스트','role'],['김하준','name'],['',''],
- ['Special Thanks','role'],['김하준','name'],['',''],['',''],
+ ['Special Thanks','role'],['최선율','name'],['가오니니','name'],['김하엘','name'],['쭌기','name'],['백균이','name'],['개코원숭이','name'],['권도짱','name'],['',''],['',''],
+ ['모든 제작은','role'],['김하준이 했습니다','big'],['',''],['Made by 김하준','small'],['',''],['',''],
  ['THANK YOU FOR PLAYING','big'],['',''],['THE END','end']
 ];
 const CR_LINE=24;
-let endS=0,endDone=false;
+let endS=0,endDone=false,endT=0,endWait=0;
 function stepEnding(){
-  const fast=anyKey&&!endDone;
+  endT++;
   const maxS=H+10+(CREDITS.length-1)*CR_LINE-H/2;
-  endS=Math.min(maxS,endS+(held[0].a||held[0].b||held[0].c||held[1].a||held[1].b||held[1].c?3.2:.7));
-  if(endS>=maxS)endDone=true;
-  if(endDone&&anyKey&&!fast){phase='title';sfx('sel');}
+  const hold=endT>150&&(held[0].a||held[0].b||held[0].c||held[1].a||held[1].b||held[1].c);
+  endS=Math.min(maxS,endS+(hold?1.8:.7));
+  if(endS>=maxS){endDone=true;endWait++;}
+  if(endDone&&endWait>90&&anyKey){phase='title';sfx('sel');}
 }
 function drawEnding(){
   ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
@@ -1408,7 +1411,7 @@ function drawEnding(){
     }
   });
   if(endDone&&((frameN>>5)&1))T(IS_TOUCH?'A 버튼을 누르면 타이틀':'아무 공격 키 → 타이틀',W/2,258,9,'#aaa',null,null);
-  else if(!endDone)T('(공격 키를 누르고 있으면 빨리 감기)',W/2,262,7,'#555',null,null);
+  else if(!endDone)T('(잠시 후 공격 키를 누르고 있으면 빨리 감기)',W/2,262,7,'#555',null,null);
 }
 function draw(){
   ctx.setTransform(1,0,0,1,0,0);
