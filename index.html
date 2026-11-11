@@ -165,7 +165,7 @@ const CH=[
   nation:'KOREA',flag:'kr',city:'대구',map:[266,98],win:'하준이랑 맨날 붙었더니 나도 강해졌지!',
   gi:'#d8322a',belt:'#111',skin:'#9a6a46',hair:'#f2c94c',band:null,glove:'#c22',shoe:'#222',spd:1.05,pow:1.12,hp:1.05,sc:1.04,
   proj:{col:'#ff8a3a',r:9,sp:3.4,dmg:12},alt:{gi:'#2a6ad0',glove:'#fff',band:null},desc:'라이벌형'},
- {name:'쭌기',en:'Hong Jun Gi',
+ {name:'홍쭌기',en:'Hong Jun Gi',
   nation:'KOREA',flag:'kr',city:'울릉도·독도',map:[352,96],pin:[[310,67],[331,73]],win:'울릉도 바람처럼 거세게 몰아쳤다!',
   gi:'#1f7a8c',belt:'#f4f4f4',skin:'#e8b48a',hair:'#2b1a0e',band:'#f4f4f4',glove:'#e8f0f0',shoe:'#223',spd:.85,pow:1.35,hp:1.25,sc:1.12,
   proj:{col:'#3cc8ff',r:11,sp:2.5,dmg:16},alt:{gi:'#6a8a2a',glove:'#fc3',band:'#fc3'},desc:'파워형'},
@@ -746,168 +746,395 @@ function drawFighter(f){
 function sr(seed){return()=>{seed=(seed*16807)%2147483647;return(seed-1)/2147483646;};}
 function mkStage(fn){const c=document.createElement('canvas');c.width=W;c.height=H;fn(c.getContext('2d'));return c;}
 const STAGES=[];
-// 0: 석양의 항구
+/* ===== 배경 공용 도구 ===== */
+const SG=(g,x,y,w,h,st)=>{const q=g.createLinearGradient(0,y,0,y+h);st.forEach(s=>q.addColorStop(s[0],s[1]));g.fillStyle=q;g.fillRect(x,y,w,h);};
+const NZ=(g,x,y,w,h,a,seed,col)=>{const R=sr(seed);g.fillStyle=col;for(let i=0,n=w*h/5|0;i<n;i++){g.globalAlpha=a*(.3+.7*R());g.fillRect(x+R()*w|0,y+R()*h|0,1,1);}g.globalAlpha=1;};
+const GLOW=(g,x,y,r,c0,c1)=>{const q=g.createRadialGradient(x,y,0,x,y,r);q.addColorStop(0,c0);q.addColorStop(1,c1);g.fillStyle=q;g.fillRect(x-r,y-r,r*2,r*2);};
+const CLOUD=(g,x,y,w,col,a,seed)=>{const R=sr(seed);g.fillStyle=col;g.globalAlpha=a;for(let i=0;i<9;i++){g.beginPath();g.ellipse(x+(R()-.5)*w,y+(R()-.5)*5,w*(.1+R()*.18),1.5+R()*3,0,0,6.28);g.fill();}g.globalAlpha=1;};
+const TREE=(g,x,y,h,c1,c2)=>{g.fillStyle='#3a2a1a';g.fillRect(x-1,y-h*.45,2,h*.45);g.fillStyle=c1;[[0,-.62,.34],[-.2,-.5,.26],[.2,-.5,.26],[0,-.85,.26]].forEach(q=>{g.beginPath();g.arc(x+q[0]*h,y+q[1]*h,q[2]*h,0,6.28);g.fill();});g.fillStyle=c2;g.beginPath();g.arc(x-.08*h,y-.7*h,.15*h,0,6.28);g.fill();};
+const PINE=(g,x,y,h,c)=>{g.fillStyle=c;g.fillRect(x-1,y-h*.3,2,h*.3);for(let i=0;i<4;i++){const yy=y-h*.28-i*h*.2,w=h*.3-i*h*.06;g.beginPath();g.moveTo(x-w,yy+h*.17);g.lineTo(x,yy-h*.1);g.lineTo(x+w,yy+h*.17);g.fill();}};
+const FLOOR=(g,y,c0,c1,seed,la,joint)=>{SG(g,0,y,W,H-y,[[0,c0],[1,c1]]);NZ(g,0,y,W,H-y,.28,seed,'#000');NZ(g,0,y,W,H-y,.12,seed+1,'#fff');for(let k=y+8,d=8;k<H;k+=d,d+=1.6){g.fillStyle='rgba(0,0,0,'+la+')';g.fillRect(0,k|0,W,1);}if(joint)for(let x=0;x<W;x+=joint){g.fillStyle='rgba(0,0,0,'+la+')';g.fillRect(x,y,1,H-y);}};
+const HALL=(g,x,y,w,hh)=>{
+  g.fillStyle='#7a7a82';g.fillRect(x-w/2-6,y-5,w+12,5);g.fillStyle='#a0a0a8';g.fillRect(x-w/2-6,y-5,w+12,1);
+  const top=y-5-hh;
+  g.fillStyle='#e6dcc0';g.fillRect(x-w/2,top,w,hh);
+  g.fillStyle='#b8281f';for(let i=0;i<5;i++)g.fillRect(x-w/2+i*(w-4)/4,top,4,hh);
+  g.fillStyle='#8a5a32';g.fillRect(x-w*.17,top+7,w*.34,hh-7);g.fillStyle='rgba(0,0,0,.35)';for(let k=0;k<5;k++)g.fillRect(x-w*.17+k*w*.068,top+7,1,hh-7);
+  g.fillStyle='#2a8a7a';g.fillRect(x-w/2,top,w,3);g.fillStyle='#d8b050';g.fillRect(x-w/2,top+3,w,1);
+  const rw=w/2+16;
+  g.fillStyle='#2e3440';g.beginPath();g.moveTo(x-rw-7,top-3);g.quadraticCurveTo(x-rw*.5,top+2,x-w*.2,top-hh*.5);g.lineTo(x+w*.2,top-hh*.5);g.quadraticCurveTo(x+rw*.5,top+2,x+rw+7,top-3);g.lineTo(x+rw,top+3);g.lineTo(x-rw,top+3);g.closePath();g.fill();
+  g.strokeStyle='rgba(255,255,255,.14)';g.lineWidth=1;for(let k=-8;k<=8;k++){g.beginPath();g.moveTo(x+k*w*.024,top-hh*.48);g.lineTo(x+k*rw/8,top+2);g.stroke();}
+  g.fillStyle='#1a1e28';g.fillRect(x-w*.22,top-hh*.54,w*.44,3);
+  g.fillStyle='rgba(0,0,0,.25)';g.fillRect(x-w/2,top+4,w,4);
+};
+
+// 0: 부산 - 광안대교 석양 항구
 STAGES.push(mkStage(g=>{
-  const R=sr(11);
-  let gr=g.createLinearGradient(0,0,0,150);gr.addColorStop(0,'#2d2060');gr.addColorStop(.5,'#d8507a');gr.addColorStop(1,'#ffb05c');
-  g.fillStyle=gr;g.fillRect(0,0,W,150);
-  g.fillStyle='rgba(255,255,255,.6)';for(let i=0;i<30;i++)g.fillRect(R()*W|0,R()*50|0,1,1);
-  g.fillStyle='#ffe6a0';g.beginPath();g.arc(340,140,36,Math.PI,0);g.fill();
-  gr=g.createLinearGradient(0,140,0,205);gr.addColorStop(0,'#c0507a');gr.addColorStop(1,'#2a2a60');g.fillStyle=gr;g.fillRect(0,140,W,65);
-  for(let i=0;i<8;i++){g.fillStyle='rgba(255,230,160,'+(.6-i*.06)+')';g.fillRect(340-30+i*2,144+i*7,60-i*4,2);}
-  g.fillStyle='#241838';g.strokeStyle='#241838';g.lineWidth=1;g.fillRect(170,146,300,3);[250,390].forEach(x=>{g.fillRect(x-2,100,4,48);g.fillRect(x-8,108,16,2);for(let d=-50;d<=50;d+=10){g.beginPath();g.moveTo(x,102);g.lineTo(x+d,146);g.stroke();}});
-  g.fillStyle='#2a1a40';g.fillRect(60,128,40,10);g.fillRect(70,118,4,10);g.fillRect(120,132,26,6);
-  g.fillStyle='#1a1230';g.fillRect(14,50,8,155);g.fillRect(14,50,120,6);g.fillRect(126,50,3,40);
-  g.beginPath();g.moveTo(14,100);g.lineTo(70,56);g.lineTo(76,56);g.lineTo(18,110);g.fill();
-  g.fillRect(8,200,20,8);
-  g.fillStyle='#8a5a2a';g.fillRect(396,168,44,37);g.fillRect(418,140,40,28);
-  g.strokeStyle='#4a2c10';g.lineWidth=2;g.strokeRect(397,169,42,35);g.strokeRect(419,141,38,26);
-  g.beginPath();g.moveTo(397,169);g.lineTo(439,204);g.moveTo(439,169);g.lineTo(397,204);g.stroke();
-  g.fillStyle='#5a3d2e';g.fillRect(0,205,W,H-205);
-  g.fillStyle='#8a6a50';g.fillRect(0,203,W,3);
-  for(let y=211;y<H;y+=7){g.fillStyle='#4a3024';g.fillRect(0,y,W,1);}
-  for(let y=205;y<H;y+=14)for(let x=((y/7)%2)*40;x<W;x+=80){g.fillStyle='#3a241a';g.fillRect(x,y,1,7);}
-  g.fillStyle='#222';g.fillRect(250,192,6,14);g.fillRect(246,192,14,3);
+  const R=sr(11),HZ=150,DK=134,TT=58,col='#1c1030',TW=[132,336];
+  SG(g,0,0,W,HZ,[[0,'#1b1750'],[.35,'#6a3488'],[.62,'#e0587c'],[.85,'#ff9a68'],[1,'#ffd9a0']]);
+  g.fillStyle='rgba(255,255,255,.7)';for(let i=0;i<26;i++)g.fillRect(R()*W|0,R()*45|0,1,1);
+  CLOUD(g,90,40,150,'#c24a82',.5,1);CLOUD(g,380,30,170,'#e46a88',.45,2);CLOUD(g,230,78,200,'#f58a78',.45,3);CLOUD(g,60,102,120,'#ffb07a',.5,4);CLOUD(g,440,100,90,'#ffb890',.5,5);
+  GLOW(g,330,HZ,120,'rgba(255,214,140,.7)','rgba(255,214,140,0)');
+  g.fillStyle='#fff0c0';g.beginPath();g.arc(330,HZ,30,Math.PI,0);g.fill();
+  // 먼 곶과 해운대 고층 빌딩
+  g.fillStyle='#4a2a5c';g.beginPath();g.moveTo(0,HZ);g.lineTo(0,134);g.quadraticCurveTo(50,122,100,138);g.quadraticCurveTo(150,146,190,HZ);g.fill();
+  g.beginPath();g.moveTo(396,HZ);g.quadraticCurveTo(430,130,W,124);g.lineTo(W,HZ);g.fill();
+  [[408,22],[416,32],[424,26],[432,38],[440,28],[448,34],[456,24],[464,30],[472,22]].forEach(b=>{g.fillStyle='#34204a';g.fillRect(b[0],HZ-b[1]-6,6,b[1]+6);g.fillStyle='rgba(255,214,140,.7)';for(let k=0;k<b[1]/5;k++)if(R()<.5)g.fillRect(b[0]+1+(k%2)*3,HZ-b[1]-3+k*5,1,1);});
+  // 바다
+  SG(g,0,HZ,W,55,[[0,'#f08a70'],[.18,'#c4506e'],[.6,'#3c3a7c'],[1,'#141c4c']]);
+  for(let i=0;i<10;i++){g.fillStyle='rgba(255,226,160,'+(.6-i*.05)+')';g.fillRect(330-34+i*2.6,HZ+2+i*5.4,68-i*5.2,2);}
+  for(let i=0;i<80;i++){const y=HZ+3+R()*50,x=R()*W,l=4+R()*12;g.fillStyle=y<HZ+26?'rgba(255,200,170,.22)':'rgba(130,140,230,.2)';g.fillRect(x,y,l,1);}
+  // 화물선
+  g.fillStyle='#2a1838';g.beginPath();g.moveTo(206,HZ-6);g.lineTo(262,HZ-6);g.lineTo(256,HZ);g.lineTo(212,HZ);g.fill();g.fillRect(244,HZ-14,10,8);g.fillRect(246,HZ-18,5,4);
+  ['#7a3a3a','#3a5a7a','#8a7a3a','#7a3a3a'].forEach((c,i)=>{g.fillStyle=c;g.fillRect(210+i*8,HZ-10,7,4);});
+  // 광안대교: 양쪽 끝이 화면 밖까지 이어지는 현수교
+  g.fillStyle=col;
+  TW.forEach(x=>{g.beginPath();g.moveTo(x-11,HZ+5);g.lineTo(x-6,DK+7);g.lineTo(x+6,DK+7);g.lineTo(x+11,HZ+5);g.fill();});
+  g.fillStyle=col;g.fillRect(0,DK,W,3);g.fillRect(0,DK+5,W,2);
+  g.strokeStyle='#44306a';g.lineWidth=.7;for(let x=0;x<W;x+=5){g.beginPath();g.moveTo(x,DK+3);g.lineTo(x+2.5,DK+5);g.lineTo(x+5,DK+3);g.stroke();}
+  TW.forEach(x=>{g.fillStyle=col;g.fillRect(x-7,TT,3,HZ+5-TT);g.fillRect(x+4,TT,3,HZ+5-TT);[TT+2,TT+26,TT+50,TT+74].forEach(y=>g.fillRect(x-7,y,14,2));g.fillRect(x-10,TT-3,20,3);g.fillStyle='#ff5a4a';g.fillRect(x-1,TT-6,2,2);});
+  const cab=(x0,y0,cx,cy,x1,y1,hang)=>{
+    g.strokeStyle=col;g.lineWidth=1.6;g.beginPath();g.moveTo(x0,y0);g.quadraticCurveTo(cx,cy,x1,y1);g.stroke();
+    g.lineWidth=.6;for(let t=0;t<=1;t+=hang){const u=1-t,x=u*u*x0+2*u*t*cx+t*t*x1,y=u*u*y0+2*u*t*cy+t*t*y1;if(y<DK-1){g.beginPath();g.moveTo(x,y);g.lineTo(x,DK);g.stroke();}}
+  };
+  cab(-10,118,50,102,TW[0],TT,.018);cab(TW[0],TT,234,196,TW[1],TT,.0105);cab(TW[1],TT,420,102,490,118,.018);
+  for(let x=2;x<W;x+=7){g.fillStyle='rgba(255,214,140,.95)';g.fillRect(x,DK-1,1,1);}
+  // 상판·탑 물그림자
+  g.fillStyle='rgba(20,12,40,.35)';TW.forEach(x=>{for(let k=0;k<6;k++)g.fillRect(x-7+(k%2),HZ+6+k*5,3,3);for(let k=0;k<6;k++)g.fillRect(x+4-(k%2),HZ+6+k*5,3,3);});
+  // 안벽
+  const QY=205;
+  g.fillStyle='#0d1238';g.fillRect(0,QY-8,W,8);
+  FLOOR(g,QY,'#5a4658','#241c2e',31,.22,0);
+  g.fillStyle='#9a8296';g.fillRect(0,QY-2,W,3);g.fillStyle='#2a2030';g.fillRect(0,QY+1,W,1);
+  g.fillStyle='#e0b83a';g.fillRect(0,QY+9,W,2);
+  g.fillStyle='rgba(255,170,120,.18)';g.beginPath();g.ellipse(330,QY+20,70,6,0,0,6.28);g.fill();
+  // 겐트리 크레인
+  g.fillStyle='#160c28';g.fillRect(10,56,5,QY-56);g.fillRect(40,56,5,QY-56);g.fillRect(8,QY-4,9,4);g.fillRect(38,QY-4,9,4);
+  g.fillRect(8,54,150,5);g.fillRect(8,64,37,3);g.fillRect(8,110,37,2);
+  g.strokeStyle='#160c28';g.lineWidth=1.2;g.beginPath();g.moveTo(12,66);g.lineTo(42,110);g.moveTo(42,66);g.lineTo(12,110);g.moveTo(12,112);g.lineTo(42,QY-6);g.moveTo(42,112);g.lineTo(12,QY-6);g.stroke();
+  g.beginPath();g.moveTo(26,54);g.lineTo(100,54);g.moveTo(26,30);g.lineTo(150,54);g.moveTo(26,30);g.lineTo(26,54);g.stroke();g.fillRect(24,28,4,26);
+  g.lineWidth=1;g.beginPath();g.moveTo(130,59);g.lineTo(130,96);g.stroke();g.fillRect(122,96,16,4);
+  g.fillStyle='#ff5a4a';g.fillRect(24,26,3,2);
+  // 컨테이너 더미
+  const CT=(x,y,c)=>{g.fillStyle=c;g.fillRect(x,y,44,22);g.fillStyle='rgba(0,0,0,.28)';for(let k=2;k<44;k+=3)g.fillRect(x+k,y+1,1,20);g.fillStyle='rgba(255,255,255,.18)';g.fillRect(x,y,44,2);g.fillStyle='rgba(0,0,0,.4)';g.fillRect(x,y+20,44,2);g.fillRect(x+43,y,1,22);};
+  CT(396,QY-22,'#8a3a2a');CT(440,QY-22,'#2a6a7a');CT(412,QY-44,'#9a7a2a');
+  g.fillStyle='rgba(0,0,0,.3)';g.fillRect(396,QY,88,3);
+  // 계선주
+  [[170,QY+2],[290,QY+2]].forEach(p=>{g.fillStyle='#2a2430';g.fillRect(p[0]-3,p[1]-7,6,8);g.fillRect(p[0]-5,p[1]-9,10,3);});
 }));
-// 1: 네온 거리 (밤)
+
+// 1: 서울 - 비 갠 밤거리 + 남산타워
 STAGES.push(mkStage(g=>{
-  const R=sr(77);
-  let gr=g.createLinearGradient(0,0,0,190);gr.addColorStop(0,'#080820');gr.addColorStop(1,'#3a1a5a');g.fillStyle=gr;g.fillRect(0,0,W,190);
-  g.fillStyle='#fff';for(let i=0;i<50;i++){g.globalAlpha=.3+R()*.6;g.fillRect(R()*W|0,R()*80|0,1,1);}g.globalAlpha=1;
-  g.fillStyle='#f4eec8';g.beginPath();g.arc(70,40,16,0,6.28);g.fill();g.fillStyle='#d8d2a8';g.beginPath();g.arc(66,36,4,0,6.28);g.fill();
-  let x=0;
-  while(x<W){
-    const w=40+R()*40|0,h=70+R()*90|0;
-    g.fillStyle=R()<.5?'#14142e':'#1a1a3a';g.fillRect(x,196-h,w,h);
-    for(let yy=196-h+6;yy<190;yy+=10)for(let xx=x+5;xx<x+w-6;xx+=9){
-      g.fillStyle=R()<.45?(R()<.5?'#ffd860':'#8fd8ff'):'#222244';g.fillRect(xx,yy,4,5);
-    }
-    x+=w+2;
-  }
-  g.fillStyle='#0c0c20';g.beginPath();g.ellipse(360,196,110,34,0,Math.PI,0);g.fill();g.fillRect(358,100,3,70);g.fillRect(352,118,15,6);g.fillStyle='#ffd860';g.fillRect(354,119,11,3);g.fillStyle='#0c0c20';g.fillRect(359,92,1,10);
-  g.fillStyle='#4a4a5a';g.fillRect(0,190,W,18);
-  g.fillStyle='#3a3a48';g.fillRect(0,206,W,2);
-  g.fillStyle='#2b2b36';g.fillRect(0,208,W,H-208);
+  const R=sr(77),SY=190;
+  SG(g,0,0,W,SY,[[0,'#04061a'],[.5,'#171340'],[.85,'#4a2456'],[1,'#94405a']]);
+  g.fillStyle='#fff';for(let i=0;i<55;i++){g.globalAlpha=.25+R()*.6;g.fillRect(R()*W|0,R()*85|0,1,1);}g.globalAlpha=1;
+  GLOW(g,70,40,46,'rgba(240,238,200,.45)','rgba(240,238,200,0)');
+  g.fillStyle='#f4eec8';g.beginPath();g.arc(70,40,15,0,6.28);g.fill();g.fillStyle='#d4cea4';[[65,36,4],[75,45,3],[72,33,2]].forEach(c=>{g.beginPath();g.arc(c[0],c[1],c[2],0,6.28);g.fill();});
+  // 먼 스카이라인
+  {let x=0;while(x<W){const w=14+R()*22|0,h=38+R()*70|0;g.fillStyle='#231a4a';g.fillRect(x,SY-h,w,h);if(R()<.4){g.fillStyle='#ffd86088';for(let k=0;k<3;k++)g.fillRect(x+2+R()*(w-4)|0,SY-h+4+R()*(h-8)|0,1,1);}x+=w+(R()<.3?3:0);}}
+  // 남산 + N서울타워
+  g.fillStyle='#14102c';g.beginPath();g.ellipse(362,SY+8,128,48,0,Math.PI,0);g.fill();
+  for(let i=0;i<30;i++){g.fillStyle='#1a1a38';g.fillRect(300+R()*120|0,150+R()*30|0,2,2);}
+  g.fillStyle='#d6d2c8';g.fillRect(361,92,3,56);g.fillStyle='#a8a49c';g.fillRect(363,92,1,56);
+  g.fillStyle='#e8e4d8';g.beginPath();g.ellipse(362.5,112,9,3.5,0,0,6.28);g.fill();g.fillStyle='#b8b4a8';g.beginPath();g.moveTo(354,113);g.lineTo(371,113);g.lineTo(366,121);g.lineTo(359,121);g.fill();
+  g.fillStyle='#ffd860';for(let x=355;x<370;x+=3)g.fillRect(x,111,2,2);
+  g.fillStyle='#d6d2c8';g.fillRect(362,66,1,28);
+  // 앞쪽 건물
+  {let x=-4;while(x<W){let w=34+R()*34|0,h=64+R()*104|0;if(x<352&&x+w>284)h=Math.max(h,96);if(x<136&&x+w>92)h=Math.max(h,84);
+    const c=['#14142e','#191938','#10102a','#1c1c3c'][R()*4|0];
+    g.fillStyle=c;g.fillRect(x,SY-h,w,h);g.fillStyle='rgba(120,120,220,.12)';g.fillRect(x,SY-h,1,h);g.fillStyle='rgba(0,0,0,.3)';g.fillRect(x+w-2,SY-h,2,h);
+    g.fillStyle='#262650';g.fillRect(x-1,SY-h-2,w+2,2);
+    for(let yy=SY-h+7;yy<SY-14;yy+=9){const full=R()<.12;for(let xx=x+5;xx<x+w-6;xx+=8){const on=full||R()<.4;g.fillStyle=on?(R()<.6?'#ffd060':R()<.5?'#9fe0ff':'#ff9ac8'):'#1c1c3e';g.fillRect(xx,yy,4,5);if(on){g.fillStyle='rgba(255,220,120,.12)';g.fillRect(xx-1,yy-1,6,7);}}}
+    if(R()<.5){g.fillStyle='#2a2a52';g.fillRect(x+w/2-4,SY-h-8,8,6);}
+    if(R()<.6){g.fillStyle='#1c1c3a';g.fillRect(x+w/2,SY-h-20,1,18);g.fillStyle='#ff4a4a';g.fillRect(x+w/2-1,SY-h-21,3,2);}
+    x+=w+1;}}
+  // 간판 받침 (BAR, 네온)
+  g.fillStyle='#0e0e24';g.fillRect(296,146,54,24);g.fillStyle='#2a2a50';g.fillRect(296,146,54,1);g.fillRect(296,146,1,24);
+  g.fillStyle='#0e0e24';g.fillRect(96,156,38,16);g.fillStyle='#2a2a50';g.fillRect(96,156,38,1);
+  // 1층 상점
+  for(let x=4;x<W;x+=46){const c=['#ffcf80','#9ad8ff','#ff9ac8','#ffe0a0'][(x/46|0)%4];g.fillStyle='#0c0c22';g.fillRect(x,170,40,20);g.fillStyle=c;g.globalAlpha=.55;g.fillRect(x+3,175,34,13);g.globalAlpha=1;g.fillStyle=['#c83a4a','#2a8a7a','#8a4ac8','#c8a02a'][(x/46|0)%4];g.fillRect(x,168,40,4);g.fillStyle='rgba(255,255,255,.2)';for(let k=0;k<40;k+=5)g.fillRect(x+k,168,2,4);}
+  // 인도·차도
+  SG(g,0,SY,W,18,[[0,'#605a74'],[1,'#3e3a50']]);NZ(g,0,SY,W,18,.3,5,'#000');
+  g.fillStyle='#807a96';g.fillRect(0,SY,W,1);g.fillStyle='#8a849e';g.fillRect(0,206,W,2);g.fillStyle='#1e1c28';g.fillRect(0,208,W,1);
+  for(let x=0;x<W;x+=30){g.fillStyle='rgba(0,0,0,.25)';g.fillRect(x,SY,1,16);}
+  FLOOR(g,208,'#2c2a36','#15131c',9,.18,0);
   g.fillStyle='#e8c840';for(let i=0;i<W;i+=48)g.fillRect(i+10,258,26,3);
-  g.fillStyle='rgba(120,200,255,.18)';g.beginPath();g.ellipse(140,240,30,5,0,0,6.28);g.fill();g.beginPath();g.ellipse(360,246,40,6,0,0,6.28);g.fill();
-  g.fillStyle='#111';g.fillRect(430,130,5,76);g.fillRect(416,130,19,4);g.fillStyle='#ffe9a0';g.fillRect(414,134,10,4);
-  g.fillStyle='rgba(255,233,160,.12)';g.beginPath();g.moveTo(414,138);g.lineTo(440,206);g.lineTo(400,206);g.fill();
+  g.fillStyle='#d8d8e0';g.fillRect(0,238,W,1);g.globalAlpha=.4;g.fillRect(0,239,W,1);g.globalAlpha=1;
+  // 젖은 노면 반사
+  [[60,'255,208,96'],[120,'154,224,255'],[323,'255,58,138'],[210,'255,154,200'],[390,'255,208,96'],[160,'255,208,96']].forEach(p=>{const q=g.createLinearGradient(0,210,0,270);q.addColorStop(0,'rgba('+p[1]+',.28)');q.addColorStop(1,'rgba('+p[1]+',0)');g.fillStyle=q;g.fillRect(p[0]-6,210,12,60);});
+  g.fillStyle='rgba(120,200,255,.15)';g.beginPath();g.ellipse(140,244,34,5,0,0,6.28);g.fill();g.beginPath();g.ellipse(360,250,44,6,0,0,6.28);g.fill();
+  // 가로등
+  [[430,130],[40,146]].forEach(p=>{g.fillStyle='#0a0a16';g.fillRect(p[0],p[1],4,SY+16-p[1]);g.fillRect(p[0]-14,p[1],18,3);g.fillStyle='#fff0b0';g.fillRect(p[0]-16,p[1]+3,8,3);GLOW(g,p[0]-12,p[1]+6,36,'rgba(255,233,160,.32)','rgba(255,233,160,0)');g.fillStyle='rgba(255,233,160,.1)';g.beginPath();g.moveTo(p[0]-16,p[1]+6);g.lineTo(p[0]+10,SY+16);g.lineTo(p[0]-40,SY+16);g.fill();});
+  // 주차된 차
+  g.fillStyle='#0a0a14';g.fillRect(180,196,34,9);g.beginPath();g.moveTo(186,196);g.lineTo(192,189);g.lineTo(206,189);g.lineTo(211,196);g.fill();g.fillStyle='#ff3a3a';g.fillRect(180,198,3,2);g.fillStyle='#9ad8ff';g.fillRect(194,191,10,4);
 }));
-// 2: 산속 도장
+
+// 2: 광주 - 산속 도장 (홍살문 · 기와 전각 · 벚나무)
 const petals=[];for(let i=0;i<40;i++)petals.push({x:rnd()*W,y:rnd()*H,s:.3+rnd()*.6,p:rnd()*6});
 STAGES.push(mkStage(g=>{
-  let gr=g.createLinearGradient(0,0,0,170);gr.addColorStop(0,'#78c4ff');gr.addColorStop(1,'#f0f8ff');g.fillStyle=gr;g.fillRect(0,0,W,170);
-  g.fillStyle='#fffbe0';g.beginPath();g.arc(400,40,20,0,6.28);g.fill();
-  g.fillStyle='#a8c4dc';g.beginPath();g.moveTo(0,160);g.lineTo(90,70);g.lineTo(170,150);g.lineTo(250,60);g.lineTo(340,150);g.lineTo(420,90);g.lineTo(480,150);g.lineTo(480,170);g.lineTo(0,170);g.fill();
-  
-  g.fillStyle='#6a8aa8';g.beginPath();g.moveTo(0,170);g.lineTo(60,120);g.lineTo(140,165);g.lineTo(220,110);g.lineTo(310,168);g.lineTo(390,125);g.lineTo(480,170);g.fill();
-  g.fillStyle='rgba(255,255,255,.35)';g.fillRect(0,150,W,26);
-  g.fillStyle='#7a4a2a';g.fillRect(40,112,40,58);g.fillStyle='#c8322a';g.fillRect(42,112,4,58);g.fillRect(74,112,4,58);g.fillStyle='#d8c8a0';g.fillRect(48,128,24,42);g.fillStyle='#2a8a7a';g.fillRect(36,108,48,4);g.fillStyle='#c8322a';g.fillRect(36,112,48,2);g.fillStyle='#2e3440';g.beginPath();g.moveTo(22,102);g.quadraticCurveTo(40,112,60,92);g.quadraticCurveTo(80,112,98,102);g.lineTo(88,110);g.lineTo(32,110);g.closePath();g.fill();g.fillStyle='#7a4a2a';g.fillRect(48,78,24,14);g.fillStyle='#2e3440';g.beginPath();g.moveTo(36,76);g.quadraticCurveTo(48,84,60,66);g.quadraticCurveTo(72,84,84,76);g.lineTo(78,84);g.lineTo(42,84);g.closePath();g.fill();
-  g.fillStyle='#6a4426';g.fillRect(300,60,8,110);g.fillRect(292,96,10,4);g.fillRect(308,112,12,4);g.fillStyle='#2f6b3a';
-  [[304,58,30,9],[278,84,26,7],[334,92,28,8],[300,112,24,6]].forEach(q=>{g.beginPath();g.ellipse(q[0],q[1],q[2],q[3],0,0,6.28);g.fill();});
-  g.fillStyle='#c8322a';g.fillRect(180,100,6,70);g.fillRect(238,100,6,70);g.fillRect(176,98,72,5);g.fillRect(178,112,68,3);for(let x=179;x<246;x+=4)g.fillRect(x,84,2,14);g.fillStyle='#1a3f9c';g.beginPath();g.arc(212,92,5,0,Math.PI);g.fill();g.fillStyle='#d81e2a';g.beginPath();g.arc(212,92,5,Math.PI,0);g.fill();g.fillStyle='#3a2a20';g.fillRect(178,168,10,4);g.fillRect(236,168,10,4);
-  g.fillStyle='#b8864a';g.fillRect(0,196,W,H-196);
-  g.fillStyle='#8a5a2a';g.fillRect(0,194,W,4);
-  for(let y=204;y<H;y+=9){g.fillStyle='rgba(60,30,10,.45)';g.fillRect(0,y,W,1);}
-  for(let y=196;y<H;y+=18)for(let x=(y/18%2)*60;x<W;x+=120){g.fillStyle='rgba(60,30,10,.4)';g.fillRect(x,y,1,9);}
-  g.fillStyle='#e8e0c8';g.fillRect(0,180,W,16);g.fillStyle='#c8bfa0';g.fillRect(0,194,W,2);
-  for(let x=10;x<W;x+=60){g.fillStyle='#7a4a22';g.fillRect(x,172,6,24);}
+  const R=sr(21);
+  SG(g,0,0,W,180,[[0,'#5aa8ec'],[.55,'#a8d4f4'],[1,'#f4f0e4']]);
+  GLOW(g,400,44,80,'rgba(255,250,210,.9)','rgba(255,250,210,0)');
+  g.fillStyle='#fffbe0';g.beginPath();g.arc(400,44,15,0,6.28);g.fill();
+  CLOUD(g,120,34,140,'#fff',.8,21);CLOUD(g,300,22,120,'#fff',.7,22);CLOUD(g,450,74,90,'#fff',.6,23);
+  const ridge=(pts,base,c)=>{g.fillStyle=c;g.beginPath();g.moveTo(pts[0][0],base);pts.forEach(p=>g.lineTo(p[0],p[1]));g.lineTo(pts[pts.length-1][0],base);g.fill();};
+  ridge([[0,120],[40,96],[90,64],[130,92],[170,110],[230,56],[290,100],[340,84],[400,70],[440,92],[480,104]],176,'#a4bcd8');
+  [[90,64,16],[230,56,18],[400,70,14]].forEach(p=>{g.fillStyle='#fff';g.beginPath();g.moveTo(p[0],p[1]);g.lineTo(p[0]-p[2],p[1]+p[2]*1.2);g.lineTo(p[0]-p[2]*.4,p[1]+p[2]*.85);g.lineTo(p[0],p[1]+p[2]*1.4);g.lineTo(p[0]+p[2]*.4,p[1]+p[2]*.85);g.lineTo(p[0]+p[2],p[1]+p[2]*1.2);g.fill();g.fillStyle='rgba(60,90,140,.2)';g.beginPath();g.moveTo(p[0],p[1]);g.lineTo(p[0]+p[2]*1.5,p[1]+p[2]*2.5);g.lineTo(p[0]+p[2]*.3,p[1]+p[2]*2.5);g.fill();});
+  ridge([[0,150],[60,122],[120,146],[200,112],[280,148],[360,118],[430,144],[480,126]],176,'#7a9ac0');
+  g.fillStyle='rgba(255,255,255,.4)';g.fillRect(0,138,W,22);
+  ridge([[0,164],[80,146],[170,162],[270,148],[360,164],[440,150],[480,160]],176,'#4a7a62');
+  for(let x=4;x<W;x+=9){PINE(g,x+R()*4,172+R()*3,16+R()*12,R()<.5?'#2a5a44':'#356a4c');}
+  g.fillStyle='rgba(230,240,250,.5)';g.fillRect(0,160,W,10);
+  // 홍살문
+  g.fillStyle='#c8322a';g.fillRect(180,100,6,72);g.fillRect(238,100,6,72);g.fillRect(176,98,72,5);g.fillRect(178,112,68,3);for(let x=179;x<246;x+=4)g.fillRect(x,84,2,14);
+  g.fillStyle='#1a3f9c';g.beginPath();g.arc(212,92,5,0,Math.PI);g.fill();g.fillStyle='#d81e2a';g.beginPath();g.arc(212,92,5,Math.PI,0);g.fill();
+  g.fillStyle='rgba(0,0,0,.25)';g.fillRect(184,100,2,72);g.fillRect(242,100,2,72);g.fillStyle='#6a6a72';g.fillRect(177,168,14,5);g.fillRect(233,168,14,5);
+  // 기와 전각 (왼쪽)과 작은 탑
+  HALL(g,78,176,60,40);
+  g.fillStyle='#8a5a32';g.fillRect(62,78,32,10);g.fillStyle='#b8281f';g.fillRect(60,88,36,3);
+  g.fillStyle='#2e3440';g.beginPath();g.moveTo(48,80);g.quadraticCurveTo(62,84,78,64);g.quadraticCurveTo(94,84,108,80);g.lineTo(100,86);g.lineTo(56,86);g.fill();
+  // 벚나무
+  g.fillStyle='#4a2e22';g.beginPath();g.moveTo(306,176);g.lineTo(310,128);g.lineTo(318,100);g.lineTo(322,100);g.lineTo(316,132);g.lineTo(322,176);g.fill();
+  g.strokeStyle='#4a2e22';g.lineWidth=2;g.beginPath();g.moveTo(312,126);g.lineTo(290,104);g.moveTo(316,116);g.lineTo(346,96);g.moveTo(314,140);g.lineTo(344,128);g.stroke();
+  [[318,92,34,16],[290,100,26,13],[346,98,28,13],[300,80,24,12],[336,80,24,11],[322,70,22,10]].forEach((e,i)=>{g.fillStyle=i%2?'#f4a8c4':'#f8c4d8';g.beginPath();g.ellipse(e[0],e[1],e[2],e[3],0,0,6.28);g.fill();});
+  g.fillStyle='#fde6ee';for(let i=0;i<60;i++)g.fillRect(272+R()*88|0,64+R()*52|0,2,2);
+  // 큰 소나무
+  g.fillStyle='#5a3a22';g.beginPath();g.moveTo(440,176);g.lineTo(442,120);g.lineTo(450,96);g.lineTo(454,98);g.lineTo(448,124);g.lineTo(452,176);g.fill();
+  [[448,90,32,9],[424,104,24,7],[470,108,22,7],[440,124,20,6]].forEach(e=>{g.fillStyle='#24542f';g.beginPath();g.ellipse(e[0],e[1],e[2],e[3],0,0,6.28);g.fill();g.fillStyle='#2f6b3a';g.beginPath();g.ellipse(e[0]-2,e[1]-2,e[2]*.7,e[3]*.6,0,0,6.28);g.fill();});
+  // 석축 담
+  SG(g,0,176,W,20,[[0,'#ddd4bc'],[1,'#b8ae94']]);
+  for(let y=176;y<196;y+=7)for(let x=((y-176)/7%2)*12;x<W;x+=24){g.fillStyle='rgba(0,0,0,.14)';g.fillRect(x,y,1,7);}
+  for(let y=176;y<196;y+=7){g.fillStyle='rgba(0,0,0,.14)';g.fillRect(0,y,W,1);}
+  g.fillStyle='#f4f0e0';g.fillRect(0,174,W,3);
+  // 나무 마루
+  FLOOR(g,196,'#c4925a','#80532a',23,.4,0);
+  for(let y=196,k=0;y<H;y+=9+k*.8,k++)for(let x=((k*47)%96);x<W;x+=96){g.fillStyle='rgba(50,24,8,.4)';g.fillRect(x,y,1,9);}
+  g.fillStyle='#6a4018';g.fillRect(0,194,W,3);g.fillStyle='#e0b078';g.fillRect(0,197,W,1);
+  for(let x=10;x<W;x+=60){g.fillStyle='#7a4a22';g.fillRect(x,170,5,26);g.fillStyle='#9a6a38';g.fillRect(x,170,5,2);}
+  g.fillStyle='#7a4a22';g.fillRect(0,176,W,2);
 }));
 const CITY_STAGE={'부산':0,'서울':1,'광주':2,'대구':3,'대전':4,'강릉':5,'제주':6,'울릉도·독도':7,'평양':8};
-const sk=(g,h,a,b)=>{const q=g.createLinearGradient(0,0,0,h);q.addColorStop(0,a);q.addColorStop(1,b);g.fillStyle=q;g.fillRect(0,0,W,h);};
-const gnd=(g,y,c,l)=>{g.fillStyle=c;g.fillRect(0,y,W,H-y);g.fillStyle=l;g.fillRect(0,y-2,W,3);for(let k=y+9;k<H;k+=9){g.fillStyle='rgba(0,0,0,.18)';g.fillRect(0,k,W,1);}};
-const mts=(g,y,c,p)=>{g.fillStyle=c;g.beginPath();g.moveTo(0,y);p.forEach(q=>g.lineTo(q[0],q[1]));g.lineTo(W,y);g.fill();};
-const blk=(g,y,c1,c2,seed,hmin,hr)=>{const R=sr(seed);let x=0;while(x<W){const w=24+R()*30|0,h=hmin+R()*hr|0;g.fillStyle=R()<.5?c1:c2;g.fillRect(x,y-h,w,h);x+=w+2;}};
-const pav=(g,x,y,w)=>{const h=w*.55;g.fillStyle='#7a4a2a';g.fillRect(x-w/2+4,y-h,w-8,h);g.fillStyle='#c8322a';g.fillRect(x-w/2+4,y-h,4,h);g.fillRect(x+w/2-8,y-h,4,h);g.fillStyle='#e0d0a8';g.fillRect(x-w/2+10,y-h*.6,w-20,h*.6);g.fillStyle='#2a8a7a';g.fillRect(x-w/2,y-h-4,w,4);g.fillStyle='#2e3440';g.beginPath();g.moveTo(x-w/2-10,y-h-8);g.quadraticCurveTo(x-w/4,y-h+2,x,y-h-w*.28);g.quadraticCurveTo(x+w/4,y-h+2,x+w/2+10,y-h-8);g.lineTo(x+w/2,y-h-2);g.lineTo(x-w/2,y-h-2);g.fill();};
-// 3: 대구 - E-월드 83타워 + 팔공산
-STAGES.push(mkStage(g=>{
-  sk(g,175,'#6ab4ff','#ffe8c0');
-  mts(g,175,'#7f9f8f',[[0,118],[70,82],[140,112],[220,62],[300,106],[380,86],[480,116]]);
-  mts(g,175,'#5a8060',[[0,150],[90,118],[190,150],[290,122],[400,150],[480,128]]);
-  blk(g,190,'#c8ccd8','#aab0c4',5,22,36);
-  g.fillStyle='#e4e8f2';g.fillRect(393,96,6,96);g.fillRect(389,150,14,4);g.fillRect(395,52,2,44);
-  g.fillStyle='#b8c2dc';g.beginPath();g.ellipse(396,96,16,5,0,0,6.28);g.fill();g.fillStyle='#8a96b8';g.fillRect(388,88,16,7);
-  g.fillStyle='#ffd860';for(let x=390;x<402;x+=4)g.fillRect(x,90,2,2);
-  gnd(g,198,'#b8a890','#e8dcc0');
-  for(let x=0;x<W;x+=40){g.fillStyle='rgba(0,0,0,.12)';g.fillRect(x,198,1,H-198);}
-}));
-// 4: 대전 - 엑스포 한빛탑 + 갑천
-STAGES.push(mkStage(g=>{
-  sk(g,170,'#58a8f0','#e8f6ff');
-  mts(g,170,'#7aa08a',[[0,140],[100,118],[200,142],[320,112],[420,138],[480,124]]);
-  blk(g,176,'#b8c4d4','#9aa8bc',9,16,26);
-  g.fillStyle='#4a90d0';g.fillRect(0,172,W,28);
-  g.fillStyle='rgba(255,255,255,.35)';for(let k=0;k<30;k++)g.fillRect((k*53)%W,174+(k*7)%24,10,1);
-  g.strokeStyle='#f4f8ff';g.lineWidth=3;g.beginPath();g.arc(310,236,120,Math.PI*1.2,Math.PI*1.8);g.stroke();
-  g.lineWidth=1;for(let a=1.25;a<1.76;a+=.05){const x=310+Math.cos(Math.PI*a)*120,y=236+Math.sin(Math.PI*a)*120;g.beginPath();g.moveTo(x,y);g.lineTo(x,172);g.stroke();}
-  g.fillStyle='#f4f8ff';g.fillRect(190,170,240,3);
-  g.fillStyle='#e8eef4';g.fillRect(96,78,8,114);g.beginPath();g.moveTo(92,192);g.lineTo(100,150);g.lineTo(108,192);g.fill();
-  g.fillStyle='#c8d8ec';g.beginPath();g.ellipse(100,76,14,9,0,0,6.28);g.fill();g.fillStyle='#fff';g.beginPath();g.moveTo(92,70);g.lineTo(100,28);g.lineTo(108,70);g.fill();
-  g.fillStyle='#4a90d0';g.fillRect(94,74,12,3);
-  gnd(g,200,'#b0b4bc','#d8dce4');
-}));
-// 5: 강릉 - 동해 일출 + 경포대 + 소나무
-STAGES.push(mkStage(g=>{
-  const R=sr(31);
-  sk(g,150,'#2c2a6a','#ff9a5a');
-  g.fillStyle='rgba(255,255,255,.6)';for(let i=0;i<20;i++)g.fillRect(R()*W|0,R()*50|0,1,1);
-  g.fillStyle='#ffe2a0';g.beginPath();g.arc(250,150,34,Math.PI,0);g.fill();
-  let gr=g.createLinearGradient(0,150,0,200);gr.addColorStop(0,'#e0705a');gr.addColorStop(1,'#1e3a7a');g.fillStyle=gr;g.fillRect(0,150,W,50);
-  for(let i=0;i<9;i++){g.fillStyle='rgba(255,226,160,'+(.65-i*.06)+')';g.fillRect(250-34+i*3,152+i*5,68-i*6,2);}
-  g.fillStyle='#1e3a28';g.beginPath();g.ellipse(86,200,110,44,0,Math.PI,0);g.fill();
-  pav(g,86,164,70);
-  [[420,0],[455,14]].forEach(q=>{g.fillStyle='#2a1a10';g.fillRect(q[0],110+q[1],6,90-q[1]);g.fillStyle='#173a24';[[0,0,26,8],[-12,16,20,6],[14,26,20,6]].forEach(e=>{g.beginPath();g.ellipse(q[0]+3+e[0],104+q[1]+e[1],e[2],e[3],0,0,6.28);g.fill();});});
-  gnd(g,200,'#a8794a','#c8996a');
-  g.fillStyle='#6a4426';for(let x=0;x<W;x+=60)g.fillRect(x+10,176,4,24);g.fillRect(0,178,W,3);
-}));
-// 6: 제주 - 한라산 + 돌하르방 + 유채꽃
+
+// 3: 대구 - 83타워 + 팔공산
 STAGES.push(mkStage(g=>{
   const R=sr(5);
-  sk(g,175,'#52bcff','#dcf6ff');
-  g.fillStyle='rgba(255,255,255,.8)';[[60,40,26],[310,30,32],[420,60,22]].forEach(c=>{g.beginPath();g.ellipse(c[0],c[1],c[2],8,0,0,6.28);g.fill();});
-  g.fillStyle='#6a9a5a';g.beginPath();g.moveTo(40,178);g.lineTo(190,100);g.lineTo(225,92);g.lineTo(265,92);g.lineTo(300,100);g.lineTo(440,178);g.fill();
-  g.fillStyle='#4a7a46';g.beginPath();g.moveTo(40,178);g.lineTo(150,128);g.lineTo(330,128);g.lineTo(440,178);g.fill();
-  g.fillStyle='#7a5a3a';g.fillRect(228,90,34,4);
-  g.fillStyle='#f2d82a';g.fillRect(0,172,W,28);g.fillStyle='#fff2a0';for(let i=0;i<120;i++)g.fillRect(R()*W|0,172+R()*28|0,2,2);g.fillStyle='#5aa83a';for(let i=0;i<50;i++)g.fillRect(R()*W|0,172+R()*28|0,2,3);
-  g.fillStyle='#7a7a82';g.beginPath();g.ellipse(58,172,13,24,0,0,6.28);g.fill();g.beginPath();g.arc(58,142,9,0,6.28);g.fill();
-  g.fillStyle='#5a5a62';g.fillRect(46,134,24,4);g.beginPath();g.ellipse(58,134,10,6,0,Math.PI,0);g.fill();
-  g.fillStyle='#222';g.fillRect(54,142,2,2);g.fillRect(61,142,2,2);g.fillRect(56,148,5,1);
-  g.fillStyle='#6a6a72';g.fillRect(50,160,6,3);g.fillRect(60,168,6,3);
-  g.fillStyle='#6a4a2a';g.fillRect(432,110,5,70);g.fillStyle='#2f8a3a';[[-22,-2],[-10,-10],[8,-10],[22,-2]].forEach(q=>{g.beginPath();g.ellipse(435+q[0],110+q[1],14,3,q[0]*.03,0,6.28);g.fill();});
-  gnd(g,200,'#3a3a42','#5a5a64');
+  SG(g,0,0,W,175,[[0,'#4c9cf0'],[.6,'#a0d0f8'],[1,'#fff0d0']]);
+  CLOUD(g,90,40,120,'#fff',.8,31);CLOUD(g,300,26,150,'#fff',.7,32);CLOUD(g,440,64,80,'#fff',.7,33);
+  const ridge=(pts,base,c)=>{g.fillStyle=c;g.beginPath();g.moveTo(pts[0][0],base);pts.forEach(p=>g.lineTo(p[0],p[1]));g.lineTo(pts[pts.length-1][0],base);g.fill();};
+  ridge([[0,118],[60,92],[120,86],[180,108],[230,64],[290,92],[350,86],[410,100],[480,112]],180,'#8eaabe');
+  ridge([[0,132],[80,108],[170,126],[250,100],[340,128],[420,110],[480,124]],180,'#6e9a86');
+  g.fillStyle='rgba(255,255,255,.25)';g.fillRect(0,126,W,20);
+  ridge([[0,154],[100,136],[200,152],[300,138],[400,154],[480,142]],182,'#4c7c5a');
+  for(let i=0;i<120;i++){g.fillStyle=R()<.5?'#3e6c4c':'#5a8c68';g.fillRect(R()*W|0,138+R()*40|0,2,2);}
+  // 도시: 고층 + 아파트 블록
+  {let x=0;while(x<W){const w=20+R()*26|0,h=22+R()*50|0,apt=R()<.55;const c=['#c8ccd8','#b4bacd','#d4d8e4','#a8aec4'][R()*4|0];
+    g.fillStyle=c;g.fillRect(x,188-h,w,h);g.fillStyle='rgba(0,0,0,.14)';g.fillRect(x+w-3,188-h,3,h);g.fillStyle='rgba(255,255,255,.35)';g.fillRect(x,188-h,w,1);
+    for(let yy=188-h+4;yy<184;yy+=apt?4:6)for(let xx=x+3;xx<x+w-3;xx+=apt?4:5){g.fillStyle=R()<.5?'rgba(60,90,140,.45)':'rgba(255,255,255,.35)';g.fillRect(xx,yy,2,apt?2:3);}
+    x+=w+1+(R()<.3?5:0);}}
+  // 두류공원 언덕 + 83타워
+  g.fillStyle='#4a8a4a';g.beginPath();g.ellipse(398,200,92,34,0,Math.PI,0);g.fill();g.fillStyle='#5a9a58';g.beginPath();g.ellipse(390,200,64,24,0,Math.PI,0);g.fill();
+  for(let i=0;i<60;i++){g.fillStyle=R()<.5?'#3a7a3e':'#6aaa62';g.fillRect(320+R()*150|0,176+R()*24|0,2,2);}
+  g.fillStyle='#eef0f8';g.beginPath();g.moveTo(386,176);g.lineTo(394,60);g.lineTo(400,60);g.lineTo(408,176);g.fill();
+  g.fillStyle='#b8c0d8';g.beginPath();g.moveTo(397,60);g.lineTo(400,60);g.lineTo(408,176);g.lineTo(399,176);g.fill();
+  g.strokeStyle='rgba(90,100,140,.5)';g.lineWidth=1;for(let y=70;y<176;y+=9){const hw=3+(y-60)*.1;g.beginPath();g.moveTo(397-hw,y);g.lineTo(397+hw,y);g.stroke();}
+  g.fillStyle='#c8d2ee';g.beginPath();g.ellipse(397,84,17,5,0,0,6.28);g.fill();g.fillStyle='#8a96b8';g.fillRect(386,80,22,5);g.fillStyle='#ffd860';for(let x=388;x<406;x+=4)g.fillRect(x,81,2,2);
+  g.fillStyle='#eef0f8';g.fillRect(396,36,2,26);g.fillStyle='#ff5a4a';g.fillRect(396,34,2,2);
+  g.fillStyle='#d8dcec';g.fillRect(376,166,42,10);
+  TREE(g,360,184,22,'#3a7a3e','#5aa05a');TREE(g,430,186,26,'#3a7a3e','#5aa05a');TREE(g,452,184,20,'#4a8a46','#6aaa62');
+  // 광장
+  g.fillStyle='#4a8a4a';g.fillRect(0,190,W,10);
+  FLOOR(g,198,'#d0c4aa','#9c9078',3,.26,40);
+  g.fillStyle='#e8dcc0';g.fillRect(0,196,W,3);g.fillStyle='#8a7e66';g.fillRect(0,199,W,1);
+  for(let x=24;x<W;x+=96){g.fillStyle='#4a4a54';g.fillRect(x,168,2,30);g.fillStyle='#e8e8f0';g.fillRect(x-3,166,8,4);}
+  [[40,196],[250,196]].forEach(p=>{g.fillStyle='#6a4a2a';g.fillRect(p[0],p[1]-5,18,3);g.fillRect(p[0]+1,p[1]-2,2,3);g.fillRect(p[0]+15,p[1]-2,2,3);});
 }));
-// 7: 울릉도·독도 - 독도(동도·서도) + 등대 + 태극기
+
+// 4: 대전 - 한빛탑 + 갑천 아치교 (다리 양끝이 양쪽 둑에 이어진다)
 STAGES.push(mkStage(g=>{
-  const R=sr(8);
-  sk(g,140,'#3a9cf0','#d4f0ff');
-  let gr=g.createLinearGradient(0,140,0,200);gr.addColorStop(0,'#2a78c8');gr.addColorStop(1,'#0e3a7a');g.fillStyle=gr;g.fillRect(0,140,W,60);
-  g.fillStyle='rgba(255,255,255,.55)';for(let i=0;i<60;i++)g.fillRect(R()*W|0,142+R()*56|0,6+R()*8|0,1);
-  g.fillStyle='#7aa0b8';g.beginPath();g.moveTo(0,152);g.lineTo(40,128);g.lineTo(80,118);g.lineTo(130,140);g.lineTo(160,152);g.fill();
-  g.fillStyle='#6a5a48';g.beginPath();g.moveTo(326,152);g.lineTo(350,100);g.lineTo(362,112);g.lineTo(380,88);g.lineTo(412,152);g.fill();
-  g.fillStyle='#8a7860';g.beginPath();g.moveTo(350,100);g.lineTo(362,112);g.lineTo(356,152);g.lineTo(336,152);g.fill();
-  g.fillStyle='#4a8a3a';g.fillRect(356,108,6,2);
-  g.fillStyle='#6a5a48';g.beginPath();g.moveTo(244,152);g.lineTo(268,120);g.lineTo(292,126);g.lineTo(312,152);g.fill();
-  g.fillStyle='#fff';g.fillRect(276,112,4,9);g.fillStyle='#d23a3a';g.fillRect(275,110,6,3);
-  g.fillStyle='#ddd';g.fillRect(288,100,1,24);g.fillStyle='#fff';g.fillRect(289,100,10,6);g.fillStyle='#d81e2a';g.fillRect(292,101,4,2);g.fillStyle='#1a3f9c';g.fillRect(292,103,4,2);
-  gnd(g,200,'#a8794a','#c8996a');
-  g.fillStyle='#6a4426';for(let x=0;x<W;x+=48)g.fillRect(x+8,176,4,24);g.fillRect(0,178,W,3);
+  const R=sr(9),DK=158,L=112,RR=398;
+  SG(g,0,0,W,170,[[0,'#4a9cec'],[.65,'#a8d8f8'],[1,'#f0f8ff']]);
+  CLOUD(g,160,34,130,'#fff',.8,41);CLOUD(g,360,22,140,'#fff',.7,42);CLOUD(g,450,60,80,'#fff',.7,43);
+  const ridge=(pts,base,c)=>{g.fillStyle=c;g.beginPath();g.moveTo(pts[0][0],base);pts.forEach(p=>g.lineTo(p[0],p[1]));g.lineTo(pts[pts.length-1][0],base);g.fill();};
+  ridge([[0,136],[90,112],[190,134],[300,106],[400,130],[480,116]],170,'#86a8bc');
+  ridge([[0,152],[100,134],[210,150],[330,130],[420,148],[480,138]],170,'#6a9a84');
+  {let x=0;while(x<W){const w=16+R()*22|0,h=14+R()*34|0;g.fillStyle=R()<.5?'#b8c4d6':'#a4b2c6';g.fillRect(x,170-h,w,h);g.fillStyle='rgba(60,90,140,.35)';for(let yy=170-h+3;yy<166;yy+=4)for(let xx=x+3;xx<x+w-2;xx+=4)if(R()<.6)g.fillRect(xx,yy,2,2);x+=w+1;}}
+  // 강 (다리 밑으로 흘러 들어옴)
+  SG(g,0,160,W,40,[[0,'#7ab4e8'],[.3,'#4a90d0'],[1,'#2a6aa8']]);
+  for(let i=0;i<70;i++){g.fillStyle='rgba(255,255,255,.32)';g.fillRect(R()*W|0,166+R()*32|0,5+R()*10|0,1);}
+  // 한빛탑: 왼쪽 둑 위
+  const tx=54;
+  g.fillStyle='#4a8a4a';g.fillRect(0,DK,L,40);
+  g.fillStyle='#e8eef4';g.fillRect(tx-4,70,8,90);g.beginPath();g.moveTo(tx-12,DK);g.lineTo(tx-3,120);g.lineTo(tx+3,120);g.lineTo(tx+12,DK);g.fill();
+  g.fillStyle='#b8c8dc';g.fillRect(tx+1,70,3,90);
+  g.fillStyle='#cadaee';g.beginPath();g.ellipse(tx,68,15,9,0,0,6.28);g.fill();g.fillStyle='#8aa0c4';g.fillRect(tx-14,66,28,4);
+  g.fillStyle='#fff';g.beginPath();g.moveTo(tx-8,62);g.lineTo(tx,16);g.lineTo(tx+8,62);g.fill();g.fillStyle='#ccd8ea';g.beginPath();g.moveTo(tx,16);g.lineTo(tx+8,62);g.lineTo(tx,62);g.fill();
+  g.fillStyle='#4a90d0';g.fillRect(tx-5,63,10,3);
+  g.fillStyle='#f4f8ff';g.fillRect(tx-26,DK-10,52,10);g.fillStyle='#8aa0c4';g.fillRect(tx-26,DK-10,52,2);
+  TREE(g,14,DK,24,'#3a7a3e','#5aa05a');TREE(g,100,DK,20,'#4a8a46','#6aaa62');TREE(g,92,DK,16,'#3a7a3e','#5aa05a');
+  // 오른쪽 둑 + 나무
+  g.fillStyle='#4a8a4a';g.fillRect(RR,DK,W-RR,40);
+  TREE(g,418,DK,26,'#3a7a3e','#5aa05a');TREE(g,452,DK,22,'#4a8a46','#6aaa62');TREE(g,474,DK,28,'#3a7a3e','#5aa05a');
+  // 석축 둑 (비스듬히 물에 닿음)
+  g.fillStyle='#b8b4a8';g.beginPath();g.moveTo(0,DK+6);g.lineTo(L-6,DK+6);g.lineTo(L+18,200);g.lineTo(0,200);g.fill();
+  g.beginPath();g.moveTo(RR+6,DK+6);g.lineTo(W,DK+6);g.lineTo(W,200);g.lineTo(RR-18,200);g.fill();
+  g.strokeStyle='rgba(0,0,0,.18)';g.lineWidth=1;for(let y=DK+12;y<200;y+=7){g.beginPath();g.moveTo(0,y);g.lineTo(L-6+(y-DK)*.6,y);g.moveTo(W,y);g.lineTo(RR+6-(y-DK)*.4,y);g.stroke();}
+  // 다리: 상판은 화면 끝까지 이어지고 아치 양끝은 둑 위의 상판에 고정
+  g.fillStyle='#5a5e68';g.fillRect(0,DK,W,4);g.fillStyle='#3a3e48';g.fillRect(0,DK+4,W,3);
+  g.fillStyle='rgba(0,0,0,.35)';g.fillRect(L,DK+7,RR-L,4);
+  g.fillStyle='#8a8e98';g.fillRect(0,DK-1,W,1);
+  g.fillStyle='#e8ecf4';g.fillRect(0,DK-6,W,1);for(let x=0;x<W;x+=8)g.fillRect(x,DK-6,1,6);
+  // 교각
+  g.fillStyle='#9a9eaa';g.fillRect(L-10,DK+7,18,26);g.fillRect(RR-8,DK+7,18,26);g.fillStyle='#7a7e8a';g.fillRect(L-10,DK+7,5,26);g.fillRect(RR-8,DK+7,5,26);
+  g.fillStyle='rgba(255,255,255,.25)';g.fillRect(L-12,DK+31,22,2);g.fillRect(RR-10,DK+31,22,2);
+  // 아치
+  const cx=(L+RR)/2,rx=(RR-L)/2,ry=70;
+  g.strokeStyle='#f4f8ff';g.lineWidth=4;g.beginPath();g.ellipse(cx,DK,rx,ry,0,Math.PI,0);g.stroke();
+  g.strokeStyle='#a8b4cc';g.lineWidth=1;g.beginPath();g.ellipse(cx,DK,rx,ry-3,0,Math.PI,0);g.stroke();
+  g.strokeStyle='rgba(240,246,255,.85)';g.lineWidth=1;for(let a=1.06;a<1.95;a+=.032){const x=cx+Math.cos(Math.PI*a)*rx,y=DK+Math.sin(Math.PI*a)*ry;g.beginPath();g.moveTo(x,y);g.lineTo(x,DK-6);g.stroke();}
+  g.fillStyle='#f4f8ff';g.fillRect(L-4,DK-8,8,8);g.fillRect(RR-4,DK-8,8,8);
+  // 강변 산책로
+  FLOOR(g,200,'#c8c4b8','#8e8a7c',4,.26,48);
+  g.fillStyle='#6a6e78';g.fillRect(0,198,W,3);g.fillStyle='#e0dcd0';g.fillRect(0,197,W,1);
+  g.fillStyle='rgba(255,255,255,.4)';g.fillRect(0,194,W,1);
+  g.fillStyle='#4a4e58';for(let x=20;x<W;x+=80){g.fillRect(x,176,2,22);g.fillStyle='#fff';g.fillRect(x-2,174,6,3);g.fillStyle='#4a4e58';}
 }));
-// 8: 평양 - 류경호텔 + 대동강
+
+// 5: 강릉 - 동해 일출 + 경포대
 STAGES.push(mkStage(g=>{
-  sk(g,170,'#9cc0e4','#eef4fa');
-  blk(g,168,'#c4ccd8','#b0bacb',3,20,34);
-  g.fillStyle='#5a86b0';g.fillRect(0,166,W,34);g.fillStyle='rgba(255,255,255,.35)';for(let k=0;k<26;k++)g.fillRect((k*61)%W,170+(k*5)%26,12,1);
-  g.fillStyle='#c8ccd4';g.beginPath();g.moveTo(292,170);g.lineTo(330,32);g.lineTo(368,170);g.fill();
-  g.fillStyle='#a2a8b8';g.beginPath();g.moveTo(330,32);g.lineTo(368,170);g.lineTo(330,170);g.fill();
-  g.strokeStyle='rgba(60,70,90,.45)';g.lineWidth=1;for(let y=50;y<170;y+=8){g.beginPath();g.moveTo(330-(y-32)*.275,y);g.lineTo(330+(y-32)*.275,y);g.stroke();}
-  g.fillStyle='#c8ccd4';g.fillRect(329,14,2,20);
-  gnd(g,200,'#a09a8c','#c8c2b0');
-  for(let x=0;x<W;x+=40){g.fillStyle='rgba(0,0,0,.12)';g.fillRect(x,200,1,H-200);}
+  const R=sr(31),HZ=148;
+  SG(g,0,0,W,HZ,[[0,'#241f5c'],[.4,'#6a3a82'],[.72,'#e0607a'],[1,'#ffb070']]);
+  g.fillStyle='rgba(255,255,255,.6)';for(let i=0;i<24;i++)g.fillRect(R()*W|0,R()*50|0,1,1);
+  CLOUD(g,120,48,130,'#a8407a',.5,51);CLOUD(g,360,34,160,'#d85a84',.5,52);CLOUD(g,260,86,150,'#f58a7a',.45,53);CLOUD(g,40,110,100,'#ffb080',.5,54);
+  GLOW(g,250,HZ,120,'rgba(255,220,150,.75)','rgba(255,220,150,0)');
+  g.fillStyle='#ffe8b0';g.beginPath();g.arc(250,HZ,32,Math.PI,0);g.fill();
+  SG(g,0,HZ,W,58,[[0,'#f09070'],[.2,'#c0506e'],[.6,'#2e3a7c'],[1,'#10205a']]);
+  for(let i=0;i<10;i++){g.fillStyle='rgba(255,226,160,'+(.65-i*.055)+')';g.fillRect(250-32+i*3,HZ+2+i*5.2,64-i*6,2);}
+  for(let i=0;i<90;i++){const y=HZ+3+R()*52,x=R()*W,l=4+R()*12;g.fillStyle=y<HZ+28?'rgba(255,200,170,.24)':'rgba(130,150,230,.22)';g.fillRect(x,y,l,1);}
+  // 먼 수평선 위 배
+  g.fillStyle='#3a2a4a';g.fillRect(380,HZ-4,14,4);g.fillRect(384,HZ-8,4,4);
+  // 경포대 언덕 + 누각
+  g.fillStyle='#1e3a28';g.beginPath();g.moveTo(0,206);g.lineTo(0,168);g.quadraticCurveTo(80,128,180,184);g.lineTo(190,206);g.fill();
+  for(let i=0;i<70;i++){g.fillStyle=R()<.5?'#173020':'#2a4a34';g.fillRect(R()*150|0,150+R()*50|0,2,2);}
+  HALL(g,84,164,58,26);
+  g.fillStyle='#7a5a3a';for(let i=0;i<5;i++)g.fillRect(58+i*13,164,3,10);
+  // 소나무
+  [[424,120],[458,138]].forEach(q=>{g.fillStyle='#2a1a10';g.beginPath();g.moveTo(q[0]-3,206);g.lineTo(q[0],q[1]+20);g.lineTo(q[0]+6,q[1]+20);g.lineTo(q[0]+4,206);g.fill();[[0,0,28,8],[-14,16,22,6],[16,26,22,6]].forEach(e=>{g.fillStyle='#143420';g.beginPath();g.ellipse(q[0]+3+e[0],q[1]+e[1],e[2],e[3],0,0,6.28);g.fill();g.fillStyle='#1c4a2c';g.beginPath();g.ellipse(q[0]+1+e[0],q[1]+e[1]-2,e[2]*.7,e[3]*.55,0,0,6.28);g.fill();});});
+  // 모래·바위 해안
+  g.fillStyle='#8a7a6a';g.beginPath();g.ellipse(320,206,60,8,0,Math.PI,0);g.fill();
+  g.fillStyle='rgba(255,255,255,.5)';for(let i=0;i<12;i++)g.fillRect(260+R()*120|0,196+R()*8|0,6,1);
+  FLOOR(g,204,'#b8834f','#6f4524',37,.34,0);
+  for(let y=204,k=0;y<H;y+=9+k*.8,k++)for(let x=((k*53)%110);x<W;x+=110){g.fillStyle='rgba(40,18,6,.4)';g.fillRect(x,y,1,9);}
+  g.fillStyle='#e0b078';g.fillRect(0,204,W,1);g.fillStyle='#6a4426';g.fillRect(0,200,W,4);
+  for(let x=0;x<W;x+=60){g.fillStyle='#6a4426';g.fillRect(x+10,176,4,26);g.fillStyle='#8a5a32';g.fillRect(x+10,176,4,2);}
+  g.fillRect(0,178,W,3);g.fillStyle='#8a5a32';g.fillRect(0,178,W,1);
 }));
+
+// 6: 제주 - 한라산 + 유채꽃밭 + 돌하르방 + 현무암 돌담
+STAGES.push(mkStage(g=>{
+  const R=sr(5);
+  SG(g,0,0,W,175,[[0,'#3aa6f4'],[.6,'#8cd2fa'],[1,'#e4f8ff']]);
+  CLOUD(g,70,40,110,'#fff',.9,61);CLOUD(g,310,28,150,'#fff',.85,62);CLOUD(g,430,64,90,'#fff',.8,63);CLOUD(g,200,70,120,'#fff',.6,64);
+  // 한라산 (완만한 순상화산 + 백록담)
+  g.fillStyle='#7aa6b0';g.beginPath();g.moveTo(0,176);g.quadraticCurveTo(80,150,160,118);g.quadraticCurveTo(210,94,236,90);g.lineTo(272,90);g.quadraticCurveTo(300,94,340,116);g.quadraticCurveTo(420,150,480,172);g.lineTo(480,176);g.fill();
+  g.fillStyle='#5f9a6a';g.beginPath();g.moveTo(0,176);g.quadraticCurveTo(90,152,170,130);g.quadraticCurveTo(210,116,236,112);g.lineTo(272,112);g.quadraticCurveTo(300,116,340,130);g.quadraticCurveTo(420,152,480,176);g.fill();
+  g.fillStyle='rgba(40,70,60,.3)';g.beginPath();g.moveTo(272,90);g.quadraticCurveTo(300,94,340,116);g.quadraticCurveTo(420,150,480,172);g.lineTo(480,176);g.lineTo(300,176);g.fill();
+  g.fillStyle='#6a5a48';g.beginPath();g.ellipse(254,91,18,3.5,0,0,6.28);g.fill();g.fillStyle='#5aa0d8';g.beginPath();g.ellipse(254,92,11,2,0,0,6.28);g.fill();
+  g.fillStyle='rgba(255,255,255,.4)';g.fillRect(0,150,W,18);
+  // 오름들
+  [[40,32,22],[150,44,26],[360,48,30],[440,36,22]].forEach(o=>{g.fillStyle='#4a8a50';g.beginPath();g.ellipse(o[0],176,o[1],o[2],0,Math.PI,0);g.fill();g.fillStyle='#62a45e';g.beginPath();g.ellipse(o[0]-o[1]*.2,176,o[1]*.6,o[2]*.7,0,Math.PI,0);g.fill();});
+  // 유채꽃밭: 먼 곳은 곱고 가까울수록 크게
+  SG(g,0,168,W,34,[[0,'#d4c820'],[1,'#f6e03a']]);
+  for(let i=0;i<260;i++){const t=R(),y=168+t*34;g.fillStyle=R()<.7?'#fff2a0':'#f0c828';g.fillRect(R()*W|0,y|0,1+t*2|0,1+t*2|0);}
+  for(let i=0;i<70;i++){g.fillStyle='#5aa83a';g.fillRect(R()*W|0,170+R()*30|0,2,3);}
+  g.strokeStyle='rgba(90,140,40,.35)';g.lineWidth=1;for(let k=0;k<8;k++){g.beginPath();g.moveTo(240+(k-4)*8,168);g.lineTo(240+(k-4)*70,202);g.stroke();}
+  // 돌담 (현무암)
+  g.fillStyle='#3a3a42';g.fillRect(0,180,W,22);
+  for(let y=180;y<202;y+=5)for(let x=(y%10?0:7);x<W;x+=14){g.fillStyle=R()<.5?'#4a4a54':'#34343c';g.fillRect(x,y,12,4);g.fillStyle='rgba(255,255,255,.08)';g.fillRect(x,y,12,1);}
+  // 돌하르방
+  const dx=62;
+  g.fillStyle='#7c7c86';g.beginPath();g.ellipse(dx,176,13,26,0,0,6.28);g.fill();g.fillStyle='#8c8c96';g.beginPath();g.ellipse(dx-3,172,8,20,0,0,6.28);g.fill();
+  g.fillStyle='#7c7c86';g.beginPath();g.arc(dx,142,10,0,6.28);g.fill();g.fillStyle='#5c5c66';g.fillRect(dx-13,133,26,4);g.beginPath();g.ellipse(dx,134,11,7,0,Math.PI,0);g.fill();
+  g.fillStyle='#2a2a30';g.beginPath();g.ellipse(dx-4,142,2,3,0,0,6.28);g.fill();g.beginPath();g.ellipse(dx+4,142,2,3,0,0,6.28);g.fill();g.fillRect(dx-1,146,2,3);g.fillRect(dx-3,151,6,1);
+  g.fillStyle='#6c6c76';g.fillRect(dx-9,160,7,4);g.fillRect(dx+2,167,7,4);
+  // 야자수 + 귤나무
+  g.fillStyle='#6a4a2a';g.beginPath();g.moveTo(430,180);g.lineTo(433,110);g.lineTo(437,110);g.lineTo(438,180);g.fill();
+  g.strokeStyle='#2f8a3a';g.lineWidth=3;[[-26,8],[-20,-4],[-8,-8],[8,-8],[22,-4],[28,8]].forEach(q=>{g.beginPath();g.moveTo(435,110);g.quadraticCurveTo(435+q[0]*.6,100+q[1]-8,435+q[0],110+q[1]+8);g.stroke();});
+  TREE(g,380,184,22,'#2f7a3a','#e87a1a');
+  FLOOR(g,202,'#44444c','#26262c',6,.3,34);
+  g.fillStyle='#5a5a64';g.fillRect(0,200,W,3);g.fillStyle='rgba(255,255,255,.1)';g.fillRect(0,203,W,1);
+}));
+
+// 7: 울릉도·독도 - 동도·서도, 등대, 태극기
+STAGES.push(mkStage(g=>{
+  const R=sr(8),HZ=140;
+  SG(g,0,0,W,HZ,[[0,'#2f8ef0'],[.6,'#8ccaf8'],[1,'#dcf4ff']]);
+  CLOUD(g,90,36,130,'#fff',.9,71);CLOUD(g,300,22,140,'#fff',.8,72);CLOUD(g,430,60,100,'#fff',.8,73);CLOUD(g,200,84,100,'#fff',.5,74);
+  SG(g,0,HZ,W,66,[[0,'#3a9ee0'],[.3,'#2a78c8'],[1,'#0a2e6e']]);
+  for(let i=0;i<110;i++){const y=HZ+2+R()*62,x=R()*W;g.fillStyle='rgba(255,255,255,'+(.15+(y-HZ)/62*.3)+')';g.fillRect(x,y,3+R()*10|0,1);}
+  // 멀리 울릉도
+  g.fillStyle='#8ab0c8';g.beginPath();g.moveTo(0,HZ+2);g.lineTo(34,122);g.lineTo(70,110);g.lineTo(108,124);g.lineTo(150,HZ+2);g.fill();g.fillStyle='#6a94b0';g.beginPath();g.moveTo(70,110);g.lineTo(108,124);g.lineTo(150,HZ+2);g.lineTo(86,HZ+2);g.fill();
+  const ROCK=(pts,c1,c2,seed)=>{const Rr=sr(seed);g.fillStyle=c1;g.beginPath();g.moveTo(pts[0][0],pts[0][1]);pts.forEach(p=>g.lineTo(p[0],p[1]));g.closePath();g.fill();g.fillStyle=c2;g.beginPath();g.moveTo(pts[1][0],pts[1][1]);g.lineTo(pts[2][0],pts[2][1]);g.lineTo(pts[3][0],pts[3][1]);g.lineTo(pts[pts.length-2][0],pts[pts.length-2][1]);g.fill();
+    g.strokeStyle='rgba(30,20,10,.35)';g.lineWidth=1;for(let i=0;i<10;i++){const x=pts[1][0]+Rr()*(pts[pts.length-2][0]-pts[1][0]);g.beginPath();g.moveTo(x,pts[2][1]+Rr()*10);g.lineTo(x+Rr()*6-3,pts[0][1]);g.stroke();}};
+  // 서도
+  ROCK([[236,HZ+20],[250,118],[266,98],[280,106],[296,116],[316,HZ+20]],'#6a5a48','#8a7860',81);
+  g.fillStyle='#4a8a3a';g.fillRect(262,98,12,2);g.fillRect(274,106,8,2);
+  // 동도
+  ROCK([[326,HZ+20],[346,104],[362,92],[380,80],[400,96],[420,HZ+20]],'#625240','#8a7860',82);
+  g.fillStyle='#4a8a3a';g.fillRect(356,98,10,2);g.fillRect(376,84,8,2);
+  // 거품(파도)
+  [[236,316],[326,420]].forEach(p=>{for(let k=0;k<4;k++){g.fillStyle='rgba(255,255,255,'+(.7-k*.15)+')';g.fillRect(p[0]-4-k*3,HZ+17+k*3,p[1]-p[0]+8+k*6,2);}});
+  g.fillStyle='rgba(255,255,255,.55)';g.beginPath();g.ellipse(276,HZ+22,44,3,0,0,6.28);g.fill();g.beginPath();g.ellipse(372,HZ+22,52,3,0,0,6.28);g.fill();
+  // 동도 등대 + 태극기
+  g.fillStyle='#f0f0f0';g.fillRect(376,66,5,14);g.fillStyle='#d23a3a';g.fillRect(375,63,7,4);g.fillStyle='#ffe28a';g.fillRect(377,68,3,3);
+  g.fillStyle='#ddd';g.fillRect(392,60,1,26);g.fillStyle='#fff';g.fillRect(393,60,12,8);g.fillStyle='#d81e2a';g.fillRect(396,61,5,3);g.fillStyle='#1a3f9c';g.fillRect(396,64,5,3);g.fillStyle='#111';g.fillRect(393,60,2,2);g.fillRect(403,60,2,2);g.fillRect(393,66,2,2);g.fillRect(403,66,2,2);
+  g.fillStyle='#e8e4d8';g.fillRect(270,94,4,8);
+  // 부두 난간 + 마루
+  g.fillStyle='#0a2a60';g.fillRect(0,196,W,10);
+  FLOOR(g,206,'#b8834f','#6a4222',17,.34,0);
+  for(let y=206,k=0;y<H;y+=9+k*.8,k++)for(let x=((k*61)%100);x<W;x+=100){g.fillStyle='rgba(40,18,6,.4)';g.fillRect(x,y,1,9);}
+  g.fillStyle='#e0b078';g.fillRect(0,206,W,1);g.fillStyle='#6a4426';g.fillRect(0,202,W,4);
+  for(let x=0;x<W;x+=48){g.fillStyle='#6a4426';g.fillRect(x+8,176,4,28);g.fillStyle='#8a5a32';g.fillRect(x+8,176,4,2);}
+  g.fillRect(0,178,W,3);g.fillRect(0,190,W,2);g.fillStyle='#8a5a32';g.fillRect(0,178,W,1);
+}));
+
+// 8: 평양 - 류경호텔 + 대동강 (건물이 강둑 위에 서 있다)
+STAGES.push(mkStage(g=>{
+  const R=sr(3),BY=170;
+  SG(g,0,0,W,BY,[[0,'#78a8e0'],[.6,'#bcd6f0'],[1,'#f4f8fc']]);
+  CLOUD(g,100,34,130,'#fff',.8,91);CLOUD(g,350,22,150,'#fff',.7,92);CLOUD(g,450,70,80,'#fff',.7,93);
+  // 먼 산
+  g.fillStyle='#a8bcd0';g.beginPath();g.moveTo(0,150);g.quadraticCurveTo(60,126,120,144);g.quadraticCurveTo(200,128,260,150);g.lineTo(260,BY);g.lineTo(0,BY);g.fill();
+  // 도시
+  {let x=0;while(x<W){const w=16+R()*24|0,h=16+R()*36|0;const c=['#c8d0dc','#b4bece','#dce2ea','#a8b4c6'][R()*4|0];g.fillStyle=c;g.fillRect(x,BY-h,w,h);g.fillStyle='rgba(255,255,255,.35)';g.fillRect(x,BY-h,w,1);g.fillStyle='rgba(0,0,0,.12)';g.fillRect(x+w-2,BY-h,2,h);
+    for(let yy=BY-h+4;yy<BY-3;yy+=4)for(let xx=x+3;xx<x+w-3;xx+=4)if(R()<.6){g.fillStyle='rgba(70,100,150,.45)';g.fillRect(xx,yy,2,2);}x+=w+1+(R()<.25?4:0);}}
+  // 강둑 (땅) — 호텔 아래
+  g.fillStyle='#6a9a58';g.fillRect(0,BY,W,10);
+  for(let i=0;i<40;i++){g.fillStyle=R()<.5?'#4a8048':'#7aaa66';g.fillRect(R()*W|0,BY+R()*10|0,3,2);}
+  // 류경호텔
+  const hx=336,hb=BY+2;
+  g.fillStyle='#d4d8e0';g.beginPath();g.moveTo(hx-40,hb);g.lineTo(hx,26);g.lineTo(hx+40,hb);g.fill();
+  g.fillStyle='#aab0c0';g.beginPath();g.moveTo(hx,26);g.lineTo(hx+40,hb);g.lineTo(hx,hb);g.fill();
+  g.strokeStyle='rgba(60,70,100,.4)';g.lineWidth=1;for(let y=46;y<hb;y+=6){const hw=(y-26)*.275;g.beginPath();g.moveTo(hx-hw,y);g.lineTo(hx+hw,y);g.stroke();}
+  for(let k=-4;k<=4;k++){g.beginPath();g.moveTo(hx,26);g.lineTo(hx+k*10,hb);g.stroke();}
+  g.fillStyle='#e8ecf2';g.fillRect(hx-3,12,6,16);g.fillStyle='#8a90a4';g.fillRect(hx-1,6,2,8);g.fillStyle='#ff5a4a';g.fillRect(hx-1,5,2,2);
+  g.fillStyle='#b8bec8';g.fillRect(hx-46,hb-6,92,6);
+  TREE(g,hx-58,hb,20,'#3a7a3e','#5aa05a');TREE(g,hx+60,hb,22,'#4a8a46','#6aaa62');TREE(g,hx-72,hb,16,'#3a7a3e','#5aa05a');TREE(g,hx+78,hb,18,'#3a7a3e','#5aa05a');
+  TREE(g,40,BY+4,20,'#4a8a46','#6aaa62');TREE(g,90,BY+4,24,'#3a7a3e','#5aa05a');TREE(g,430,BY+4,20,'#3a7a3e','#5aa05a');TREE(g,462,BY+4,24,'#4a8a46','#6aaa62');
+  // 대동강
+  SG(g,0,BY+10,W,32,[[0,'#6a9ac4'],[1,'#3a6a9c']]);
+  for(let i=0;i<70;i++){g.fillStyle='rgba(255,255,255,.3)';g.fillRect(R()*W|0,BY+12+R()*28|0,4+R()*10|0,1);}
+  g.fillStyle='rgba(212,216,224,.25)';g.beginPath();g.moveTo(hx-40,BY+10);g.lineTo(hx,BY+40);g.lineTo(hx+40,BY+10);g.fill();
+  // 제방 + 산책로
+  g.fillStyle='#8e8a7c';g.fillRect(0,BY+38,W,6);g.fillStyle='#b8b4a4';g.fillRect(0,BY+38,W,1);
+  FLOOR(g,200,'#c8c2b0','#8c8674',7,.26,44);
+  g.fillStyle='#6a6e78';g.fillRect(0,198,W,3);g.fillStyle='#e0dcd0';g.fillRect(0,197,W,1);
+  g.fillStyle='#4a4e58';for(let x=20;x<W;x+=80){g.fillRect(x,176,2,22);g.fillStyle='#fff';g.fillRect(x-2,174,6,3);g.fillStyle='#4a4e58';}
+}));
+
 function drawStageFx(i){
   if(i===0){
     ctx.fillStyle='rgba(255,220,180,.28)';
-    for(let k=0;k<7;k++){const y=146+k*8;for(let j=0;j<7;j++){const x=((j*80+frameN*(.15+k*.05))%(W+40))-20;ctx.fillRect(x,y,12+k*2,1);}}
+    for(let k=0;k<7;k++){const y=154+k*7;for(let j=0;j<7;j++){const x=((j*80+frameN*(.15+k*.05))%(W+40))-20;ctx.fillRect(x,y,12+k*2,1);}}
   }else if(i===1){
     const fl=((frameN>>3)%11===0);
     ctx.fillStyle=fl?'#533':'#ff3a8a';ctx.fillRect(300,150,46,16);
@@ -1382,7 +1609,7 @@ const CREDITS=[
  ['그래픽','role'],['김하준','name'],['',''],
  ['음악 · 효과음','role'],['김하준','name'],['',''],
  ['테스트','role'],['김하준','name'],['',''],
- ['Special Thanks','role'],['최선율','name'],['가오니니','name'],['김하엘','name'],['쭌기','name'],['백균이','name'],['개코원숭이','name'],['권도짱','name'],['',''],['',''],
+ ['Special Thanks','role'],['최선율','name'],['가오니니','name'],['김하엘','name'],['홍쭌기','name'],['백균이','name'],['개코원숭이','name'],['권도짱','name'],['',''],['',''],
  ['모든 제작은','role'],['김하준이 했습니다','big'],['',''],['Made by 김하준','small'],['',''],['',''],
  ['THANK YOU FOR PLAYING','big'],['',''],['THE END','end']
 ];
