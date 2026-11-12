@@ -619,9 +619,14 @@ const NET_FIREBASE={
 };
 let fbDB=null,netQ=null;const netBad=new Set();
 const netIce=()=>NET_LAN_ONLY?[]:[
-  {urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302','stun:global.stun.twilio.com:3478']},
-  /* 모바일 데이터처럼 직접 연결이 막힌 망을 위한 무료 중계 서버 (안 되면 연결이 안 될 수 있음) */
-  {urls:['turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turn:openrelay.metered.ca:443?transport=tcp'],username:'openrelayproject',credential:'openrelayproject'}
+  /* STUN: 여러 곳을 같이 써서 한 곳이 막혀도 공인 주소를 찾도록 함 */
+  {urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302','stun:stun2.l.google.com:19302','stun:stun.cloudflare.com:3478','stun:global.stun.twilio.com:3478','stun:stun.services.mozilla.com:3478']},
+  /* TURN(중계): 직접 연결이 막힌 망(모바일 데이터·회사/학교 망)용. 무료 공개 서버라 일부는 죽어 있을 수 있어서 여러 개를 같이 둠 (되는 것을 자동으로 사용) */
+  {urls:['turn:staticauth.openrelay.metered.ca:80','turn:staticauth.openrelay.metered.ca:443','turns:staticauth.openrelay.metered.ca:443?transport=tcp','turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turn:openrelay.metered.ca:443?transport=tcp','turns:openrelay.metered.ca:443?transport=tcp'],username:'openrelayproject',credential:'openrelayproject'},
+  {urls:['turn:turn.anyfirewall.com:443?transport=tcp','turns:turn.anyfirewall.com:443?transport=tcp'],username:'webrtc',credential:'webrtc'},
+  {urls:['turn:numb.viagenie.ca:3478','turn:numb.viagenie.ca:3478?transport=tcp','turns:numb.viagenie.ca:443?transport=tcp'],username:'webrtc@live.com',credential:'muazkh'},
+  {urls:['turn:freestun.net:3478','turn:freestun.net:3478?transport=tcp','turns:freestun.net:5349'],username:'free',credential:'free'},
+  {urls:['turn:global.relay.metered.ca:80','turn:global.relay.metered.ca:443','turns:global.relay.metered.ca:443?transport=tcp'],username:'openrelayproject',credential:'openrelayproject'}
 ];
 function netLoad(src){return new Promise((res,rej)=>{const e=document.createElement('script');e.src=src;e.onload=res;e.onerror=()=>rej(new Error('접속하지 못했어요. 인터넷 연결을 확인해 주세요'));document.head.appendChild(e);});}
 async function netDB(){
@@ -638,7 +643,7 @@ async function netDB(){
     async update(id,patch){await col().doc(id).update(patch);},
     async push(id,field,val){await col().doc(id).update({[field]:firebase.firestore.FieldValue.arrayUnion(val)});},
     async remove(id){try{await col().doc(id).delete();}catch(e){}},
-    listen(id,cb){return col().doc(id).onSnapshot(sn=>cb(sn.exists?sn.data():null),e=>cb(null,e));},
+    listen(id,cb){return col().doc(id).onSnapshot(sn=>cb(sn.exists?sn.data():null,null,sn.metadata.fromCache),e=>cb(null,e));},
     /* 대결 신청: 상대(id) 방에 내 신청서를 남긴다 (상대가 이미 다른 신청을 받는 중이면 실패) */
     request(me,id,info){
       return db.runTransaction(async tx=>{
@@ -788,10 +793,10 @@ async function netQueueStart(){
     if(!alive())return;
     say('상대를 찾는 중…');
     /* 내 방 감시: 누가 들어오면 내가 호스트 */
-    q.unsubs.push(db.listen(me,(d,err)=>{
+    q.unsubs.push(db.listen(me,(d,err,fc)=>{
       if(!alive())return;
       if(err){netQueueFail(err);return;}
-      if(!d)return;
+      if(!d||fc)return;
       if(d.status==='claimed'&&!q.hosting&&!q.joined){q.hosting=true;if(q.out)q.cancelOut(null,true);q.closeInc();netHostConnect(q,db,me,say);}
       q.last=d;
       if(q.hosting&&netPC){
@@ -819,21 +824,23 @@ async function netQueueStart(){
         if(!alive())return;
         if(!ok){say('그 사람은 지금 다른 신청을 받는 중이에요. 잠시 후 다시 눌러보세요');scan().catch(()=>{});return;}
         const o=q.out={id,at:Date.now()};
-        const sec=()=>Math.max(0,20-Math.floor((Date.now()-o.at)/1000));
+        const sec=()=>Math.max(0,30-Math.floor((Date.now()-o.at)/1000));
         const m=netModal('⚔ 대결 신청','<b>'+netEsc(who||'상대')+'</b> 님에게 대결을 신청했어요','대답을 기다리는 중…','',[['취소',()=>q.cancelOut('신청을 취소했어요'),'g']]);
         o.tick=setInterval(()=>{if(m.sub)m.sub.textContent='대답을 기다리는 중…  ('+sec()+'초)';},500);
-        o.timer=setTimeout(()=>q.cancelOut('대답이 없어요. 다른 상대를 골라보세요'),20000);
+        o.timer=setTimeout(()=>q.cancelOut('대답이 없어요. 다른 상대를 골라보세요'),30000);
         q.timers.push(o.tick,o.timer);
-        o.unsub=db.listen(id,(d,err)=>{
+        o.unsub=db.listen(id,(d,err,fc)=>{
           if(!alive()||q.out!==o||q.hosting||q.joined)return;
-          if(err||!d){q.cancelOut('그 사람이 나갔어요');return;}
+          if(err){q.cancelOut('연결이 불안정해요. 다시 시도해 주세요');return;}
+          if(fc)return; /* 캐시에 있던 옛 문서(신청 전 상태)를 보고 자동 취소되던 문제 방지 */
+          if(!d){q.cancelOut('그 사람이 나갔어요');return;}
           if(d.status==='claimed'&&d.guest===me){
             q.out=null;clearTimeout(o.timer);clearInterval(o.tick);try{o.unsub();}catch(e){}
             netModalClose();q.joined=true;netGuestJoin(q,db,id,say);return;
           }
           if(d.rej&&d.rej.from===me){q.cancelOut('거절당했어요. 다른 상대를 골라보세요');return;}
           if(d.status!=='waiting'){q.cancelOut('그 사람은 다른 대결을 시작했어요');return;}
-          if(!d.req||d.req.from!==me){q.cancelOut('신청이 취소됐어요');return;}
+          if((!d.req||d.req.from!==me)&&Date.now()-o.at>3000){q.cancelOut('신청이 취소됐어요');return;}
         });
         q.unsubs.push(o.unsub);
       }catch(e){if(alive())netQueueFail(e);}
@@ -841,24 +848,28 @@ async function netQueueStart(){
     };
     /* ---- 내가 신청 받기 (수락 / 거절) ---- */
     q.closeInc=()=>{const c=q.inc;if(!c)return;q.inc=null;clearInterval(c.tick);netModalClose();};
+    q.dismissed=new Set();q.seen={};
     q.acceptReq=async req=>{
-      q.closeInc();say('수락했어요! 준비 중…');
+      q.dismissed.add(req.from+':'+req.t);q.closeInc();say('수락했어요! 준비 중…');
       try{
         const ok=await db.claim(req.from,me);
         if(!alive())return;
         if(!ok)say('그 사람은 이미 나갔어요');
       }catch(e){if(alive())netQueueFail(e);}
     };
-    q.rejectReq=req=>{q.closeInc();db.reject(me,req.from).catch(()=>{});say('거절했어요');};
+    q.rejectReq=req=>{q.dismissed.add(req.from+':'+req.t);q.closeInc();db.reject(me,req.from).catch(()=>{});say('거절했어요');};
     q.incoming=req=>{
-      const fresh=req&&req.from&&Math.abs(Date.now()-(req.t||0))<45000;
+      /* 상대 기기 시계와 비교하지 않고, 내가 처음 본 시각 기준으로 판단 (시계가 어긋나면 신청이 무시되던 문제) */
+      const key=req&&req.from?req.from+':'+req.t:null;
       const cur=q.inc;
+      if(key&&!q.seen[key])q.seen[key]=Date.now();
+      const fresh=key&&!q.dismissed.has(key)&&Date.now()-q.seen[key]<25000;
       if(!fresh){if(cur)q.closeInc();return;}
-      if(cur&&cur.t===req.t)return;
+      if(cur&&cur.key===key)return;
       if(q.out&&q.out.id===req.from){q.acceptReq(req);return;}   /* 서로 신청했으면 바로 연결 */
       if(q.out||q.busy)return;                                    /* 내가 신청하는 중이면 잠깐 보류(몇 초 뒤 다시 확인) */
       q.closeInc();
-      const c=q.inc={t:req.t,at:Date.now()};
+      const c=q.inc={t:req.t,key,at:Date.now()};
       const sec=()=>Math.max(0,20-Math.floor((Date.now()-c.at)/1000));
       const nm=netCleanNick(req.nick)||'누군가';
       const m=netModal('⚔ 대결 신청이 왔어요!','<b>'+netFlag(req.cc)+' '+netEsc(nm)+'</b>',netEsc(CH[netCh(req.ch)].name)+' · '+netEsc(netCName(req.cc)),'',
@@ -898,7 +909,7 @@ async function netHostConnect(q,db,me,say){
     await pc.setLocalDescription(await pc.createOffer());
     if(netQ!==q||q.cancel)return;
     await db.update(me,{offer:{type:pc.localDescription.type,sdp:pc.localDescription.sdp}});
-    q.timers.push(setTimeout(()=>{if(netQ===q&&!netOpen)netQueueRestart('연결이 안 됐어요. 다시 찾는 중…');},25000));
+    q.timers.push(setTimeout(()=>{if(netQ===q&&!netOpen)netQueueRestart('연결이 안 됐어요. 다시 찾는 중…');},35000));
   }catch(e){if(netQ===q)netQueueRestart('연결이 안 됐어요. 다시 찾는 중…');}
 }
 function netGuestJoin(q,db,docId,say){
@@ -926,8 +937,8 @@ function netGuestJoin(q,db,docId,say){
     else if(q.answered)netPump(q,netPC,d.hc,'hcN');
   }));
   /* 상대가 10초 안에 반응이 없으면(앱을 닫았거나 멈춘 사람) 그 사람은 빼고 다시 목록으로 */
-  q.timers.push(setTimeout(()=>{if(netQ===q&&!q.answered){netBad.add(docId);netQueueRestart('그 사람은 응답이 없어요. 다른 상대를 골라보세요');}},10000));
-  q.timers.push(setTimeout(()=>{if(netQ===q&&!netOpen){netBad.add(docId);netQueueRestart('연결이 안 됐어요. 다시 찾는 중…');}},25000));
+  q.timers.push(setTimeout(()=>{if(netQ===q&&!q.answered){netBad.add(docId);netQueueRestart('그 사람은 응답이 없어요. 다른 상대를 골라보세요');}},15000));
+  q.timers.push(setTimeout(()=>{if(netQ===q&&!netOpen){netBad.add(docId);netQueueRestart('연결이 안 됐어요. 다시 찾는 중…');}},35000));
 }
 /* ---- 대기열 화면 ---- */
 function netCss(){
