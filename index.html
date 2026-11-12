@@ -534,7 +534,7 @@ function netBindPC(pc,onFail){
 function netBindDC(dc){
   netDC=dc;
   dc.onopen=()=>{netOpen=true;netConnected();};
-  dc.onclose=()=>{if(netRole)netLeave('상대와의 연결이 끊겼어요',true);};
+  dc.onclose=()=>{if(netRole)netLeave('상대가 나갔어요',true);};
   dc.onmessage=e=>netRecv(e.data);
 }
 function netConnected(){
@@ -618,7 +618,7 @@ const NET_FIREBASE={
 };
 let fbDB=null,netQ=null;const netBad=new Set();
 const netIce=()=>NET_LAN_ONLY?[]:[{urls:'stun:stun.l.google.com:19302'}];
-function netLoad(src){return new Promise((res,rej)=>{const e=document.createElement('script');e.src=src;e.onload=res;e.onerror=()=>rej(new Error('Firebase 를 불러오지 못했어요 (인터넷 연결을 확인하세요)'));document.head.appendChild(e);});}
+function netLoad(src){return new Promise((res,rej)=>{const e=document.createElement('script');e.src=src;e.onload=res;e.onerror=()=>rej(new Error('접속하지 못했어요. 인터넷 연결을 확인해 주세요'));document.head.appendChild(e);});}
 async function netDB(){
   if(fbDB)return fbDB;
   if(!window.firebase){
@@ -659,7 +659,7 @@ async function netDiscover(){
   pc.createDataChannel('d');pc.onicecandidate=e=>{if(e.candidate)parse(e.candidate.candidate);};
   try{await pc.setLocalDescription(await pc.createOffer());await netGather(pc);}catch(e){}
   pc.close();
-  if(!keys.size)throw new Error('내 네트워크를 확인하지 못했어요 (인터넷 연결이 필요해요)');
+  if(!keys.size)throw new Error('같은 Wi-Fi를 찾지 못했어요. 인터넷 연결을 확인해 주세요');
   return [...keys];
 }
 /* 대기열 목록 그리기: 대기 중인 사람마다 버튼 한 줄 */
@@ -667,7 +667,7 @@ function netRenderList(list){
   const box=netLobby&&netLobby.querySelector('.ls');if(!box)return;
   const sig=list.map(d=>d.id).join('|');
   if(box.dataset.sig===sig){
-    box.querySelectorAll('button').forEach((b,i)=>{const w=Math.max(0,Math.floor((Date.now()-(parseInt(list[i].id)||Date.now()))/1000));b.querySelector('small').textContent='대기 '+w+'초';});
+    box.querySelectorAll('button').forEach((b,i)=>{const w=Math.max(0,Math.floor((Date.now()-(parseInt(list[i].id)||Date.now()))/1000));});
     return;
   }
   box.dataset.sig=sig;box.innerHTML='';
@@ -678,7 +678,7 @@ function netRenderList(list){
     const nm=netCleanNick(d.nick)||('플레이어 '+String(d.id).slice(-4).toUpperCase());
     const cn=CH[netCh(d.ch)].name;
     const l=document.createElement('span');l.textContent=nm+'  ·  '+cn;
-    const r=document.createElement('small');r.textContent='대기 '+w+'초';
+    const r=document.createElement('small');r.textContent='대결!';
     b.appendChild(l);b.appendChild(r);
     b.onclick=()=>{if(netQ&&netQ.join)netQ.join(d.id);};
     box.appendChild(b);
@@ -699,7 +699,7 @@ function netQueueRestart(msg){
 function netQueueFail(e){
   const code=(e&&e.code)||'';
   netQueueStop();netCleanup();
-  netQStatus(code==='permission-denied'?'대기열 서버가 접근을 막았어요 (Firestore 규칙에서 '+NET_COL+' 컬렉션 읽기/쓰기를 허용해야 해요)':'오류: '+((e&&e.message)||e));
+  console.error(e);netQStatus(code==='permission-denied'?'지금은 접속할 수 없어요. 잠시 후 다시 해보세요':'문제가 생겼어요. 다시 시도해 주세요');
   const r=netLobby&&netLobby.querySelector('#rt');if(r)r.style.display='';
 }
 async function netQueueStart(){
@@ -710,33 +710,33 @@ async function netQueueStart(){
   q.timers.push(setInterval(paint,1000));
   const r=netLobby&&netLobby.querySelector('#rt');if(r)r.style.display='none';
   try{
-    say('서버에 연결하는 중…');
+    say('접속하는 중…');
     const db=await netDB();if(!alive())return;
-    say(NET_LAN_ONLY?'내 네트워크를 확인하는 중…':'준비하는 중…');
+    say(NET_LAN_ONLY?'같은 Wi-Fi를 찾는 중…':'준비하는 중…');
     const keys=await netDiscover();if(!alive())return;
     const me=Date.now()+'-'+Math.random().toString(36).slice(2,8);q.id=me;
     await db.create(me,{nick:netNick,ch:netChar,buckets:keys,status:'waiting',guest:null,offer:null,answer:null,hb:Date.now()});
     if(!alive())return;
-    say(NET_LAN_ONLY?'같은 네트워크의 상대를 찾는 중…':'상대를 찾는 중…');
+    say('상대를 찾는 중…');
     /* 내 방 감시: 누가 들어오면 내가 호스트 */
     q.unsubs.push(db.listen(me,(d,err)=>{
       if(!alive())return;
       if(err){netQueueFail(err);return;}
       if(!d)return;
       if(d.status==='claimed'&&!q.hosting&&!q.joined){q.hosting=true;netHostConnect(q,db,me,say);}
-      if(q.hosting&&d.answer&&!q.gotAnswer&&netPC){q.gotAnswer=true;netPC.setRemoteDescription(d.answer).catch(()=>netQueueRestart('연결에 실패했어요. 다시 찾는 중…'));}
+      if(q.hosting&&d.answer&&!q.gotAnswer&&netPC){q.gotAnswer=true;netPC.setRemoteDescription(d.answer).catch(()=>netQueueRestart('연결이 안 됐어요. 다시 찾는 중…'));}
     }));
     q.timers.push(setInterval(()=>{if(alive()&&!q.hosting&&!q.joined)db.update(me,{hb:Date.now()}).catch(()=>{});},5000));
     /* 대기 중인 사람 목록을 보여주고, 사용자가 직접 고른 상대의 방에 들어간다 (고른 상대가 호스트=1P) */
     q.busy=false;
     q.join=async id=>{
       if(!alive()||q.hosting||q.joined||q.busy)return;
-      q.busy=true;say('신청하는 중…');
+      q.busy=true;say('대결 신청 중…');
       try{
         const ok=await db.claim(me,id);
         if(!alive())return;
         if(ok){q.joined=true;netRenderList([]);netGuestJoin(q,db,id,say);}
-        else{say('그 상대는 이미 다른 대결 중이에요. 다른 상대를 골라주세요');scan().catch(()=>{});}
+        else{say('그 사람은 이미 다른 대결 중이에요. 다른 상대를 골라보세요');scan().catch(()=>{});}
       }catch(e){if(alive())netQueueFail(e);}
       finally{q.busy=false;}
     };
@@ -747,7 +747,7 @@ async function netQueueStart(){
       const now=Date.now();
       docs.forEach(d=>{if(d.id!==me&&now-(d.hb||0)>120000)db.remove(d.id);});
       const c=docs.filter(d=>d.id!==me&&d.status==='waiting'&&!netBad.has(d.id)&&now-(d.hb||0)<NET_STALE).sort((a,b)=>a.id<b.id?-1:1);
-      if(!q.busy)q.msg=c.length?(NET_LAN_ONLY?'같은 네트워크에 ':'')+c.length+'명이 대기 중이에요. 대결할 상대를 골라 누르세요 (내가 대기열에 올라가 있어서 상대가 나를 골라도 돼요)':(NET_LAN_ONLY?'같은 네트워크에서 ':'')+'다른 사람을 기다리는 중… (대기열에 올라가 있어요)';
+      if(!q.busy)q.msg=c.length?'대결할 상대를 눌러 보세요!':'상대를 기다리는 중…  (친구도 온라인 대전에 들어오면 나타나요)';
       netRenderList(c);
     };
     q.timers.push(setInterval(()=>scan().catch(netQueueFail),1500));
@@ -756,29 +756,29 @@ async function netQueueStart(){
 }
 async function netHostConnect(q,db,me,say){
   try{
-    say('상대를 찾았어요! 연결하는 중…');
+    say('상대를 찾았어요! 준비 중…');
     netCleanup();netRole='host';netMe=0;
     const pc=netPC=new RTCPeerConnection({iceServers:netIce()});
-    netBindPC(pc,()=>netQueueRestart('연결에 실패했어요. 다시 찾는 중…'));
+    netBindPC(pc,()=>netQueueRestart('연결이 안 됐어요. 다시 찾는 중…'));
     netBindDC(pc.createDataChannel('g'));
     await pc.setLocalDescription(await pc.createOffer());await netGather(pc);
     if(netQ!==q||q.cancel)return;
     await db.update(me,{offer:{type:pc.localDescription.type,sdp:pc.localDescription.sdp}});
-    q.timers.push(setTimeout(()=>{if(netQ===q&&!netOpen)netQueueRestart('상대와 연결하지 못했어요. 다시 찾는 중…');},15000));
-  }catch(e){if(netQ===q)netQueueRestart('연결에 실패했어요. 다시 찾는 중…');}
+    q.timers.push(setTimeout(()=>{if(netQ===q&&!netOpen)netQueueRestart('연결이 안 됐어요. 다시 찾는 중…');},15000));
+  }catch(e){if(netQ===q)netQueueRestart('연결이 안 됐어요. 다시 찾는 중…');}
 }
 function netGuestJoin(q,db,docId,say){
-  say('상대를 찾았어요! 연결하는 중…');
+  say('상대를 찾았어요! 준비 중…');
   const answer=async offer=>{
     try{
       netCleanup();netRole='guest';netMe=1;
       const pc=netPC=new RTCPeerConnection({iceServers:netIce()});
-      netBindPC(pc,()=>netQueueRestart('연결에 실패했어요. 다시 찾는 중…'));
+      netBindPC(pc,()=>netQueueRestart('연결이 안 됐어요. 다시 찾는 중…'));
       pc.ondatachannel=e=>netBindDC(e.channel);
       await pc.setRemoteDescription(offer);await pc.setLocalDescription(await pc.createAnswer());await netGather(pc);
       if(netQ!==q||q.cancel)return;
       await db.update(docId,{answer:{type:pc.localDescription.type,sdp:pc.localDescription.sdp}});
-    }catch(e){if(netQ===q)netQueueRestart('연결에 실패했어요. 다시 찾는 중…');}
+    }catch(e){if(netQ===q)netQueueRestart('연결이 안 됐어요. 다시 찾는 중…');}
   };
   q.answered=false;
   q.unsubs.push(db.listen(docId,(d,err)=>{
@@ -786,38 +786,41 @@ function netGuestJoin(q,db,docId,say){
     if(err||!d){if(!q.answered)netQueueRestart('상대가 나갔어요. 다시 찾는 중…');return;}
     if(d.offer&&!q.answered){q.answered=true;answer(d.offer);}
   }));
-  q.timers.push(setTimeout(()=>{if(netQ===q&&!netOpen){netBad.add(docId);netQueueRestart('상대와 연결하지 못했어요. 다시 찾는 중…');}},15000));
+  q.timers.push(setTimeout(()=>{if(netQ===q&&!netOpen){netBad.add(docId);netQueueRestart('연결이 안 됐어요. 다시 찾는 중…');}},15000));
 }
 /* ---- 대기열 화면 ---- */
 function netCss(){
   if(document.getElementById('netcss'))return;
   const st=document.createElement('style');st.id='netcss';
-  st.textContent=`#net{position:fixed;left:0;top:0;right:0;bottom:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,20,.88);color:#fff;font-family:'Malgun Gothic','Apple SD Gothic Neo','Noto Sans KR',sans-serif}
-#net .pn{width:min(92vw,440px);padding:16px 18px;border:2px solid #5ab4ff;border-radius:10px;background:#101040;box-sizing:border-box;text-align:center}
-#net h2{margin:0 0 6px;font-size:19px;color:#ffd84a}
-#net p{margin:6px 0;font-size:13px;line-height:1.45;color:#cde}
-#net .st{min-height:36px;font-size:14px;color:#ffd84a;margin:10px 0;line-height:1.4}
-#net .sp{width:30px;height:30px;margin:8px auto 0;border:4px solid rgba(255,255,255,.25);border-top-color:#ffd84a;border-radius:50%;animation:netspin 1s linear infinite}
+  st.textContent=`#net{position:fixed;left:0;top:0;right:0;bottom:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 30%,rgba(40,60,200,.55),rgba(0,0,30,.95));color:#fff;font-family:'Malgun Gothic','Apple SD Gothic Neo','Noto Sans KR',sans-serif;user-select:none}
+#net .pn{width:min(92vw,440px);padding:18px 20px;border:3px solid #ffd84a;border-radius:6px;background:linear-gradient(#14146a,#0a0a40);box-shadow:0 0 0 3px #000,0 0 28px rgba(90,180,255,.45);box-sizing:border-box;text-align:center}
+#net h2{margin:0 0 10px;font-size:24px;letter-spacing:2px;color:#ffd84a;text-shadow:2px 2px 0 #6a2410,0 0 12px rgba(255,200,60,.5)}
+#net p{margin:6px 0;font-size:15px;line-height:1.45;color:#dfe8ff}
+#net .me{display:inline-block;margin:0 0 8px;padding:4px 14px;border-radius:20px;background:#000;border:2px solid #5ab4ff;font-size:14px;font-weight:bold;color:#9fd2ff}
+#net .st{min-height:34px;font-size:14px;color:#ffd84a;margin:8px 0;line-height:1.4}
+#net .sp{width:26px;height:26px;margin:6px auto 0;border:4px solid rgba(255,255,255,.25);border-top-color:#ffd84a;border-radius:50%;animation:netspin 1s linear infinite}
 @keyframes netspin{to{transform:rotate(360deg)}}
-#net button{font-size:15px;font-weight:bold;padding:9px 18px;margin:4px 4px;border-radius:8px;border:2px solid rgba(255,255,255,.3);background:#2a4aa8;color:#fff;min-height:40px}
-#net button.g{background:#444}
-#net input{width:80%;box-sizing:border-box;font-size:17px;padding:9px;margin:10px 0 4px;border-radius:8px;border:2px solid #5ab4ff;background:#0a0a30;color:#fff;text-align:center;font-family:inherit}
+@keyframes netpop{0%{transform:scale(.96)}50%{transform:scale(1.03)}100%{transform:scale(.96)}}
+#net button{font-size:17px;font-weight:bold;padding:10px 22px;margin:4px 4px;border-radius:6px;border:3px solid #fff;background:linear-gradient(#e8402a,#a01808);color:#fff;min-height:44px;cursor:pointer;text-shadow:1px 1px 0 #000;box-shadow:0 3px 0 #000}
+#net button:active{transform:translateY(2px);box-shadow:0 1px 0 #000}
+#net button.g{background:linear-gradient(#667,#334);border-color:#aab;font-size:14px;padding:8px 16px;min-height:38px}
+#net input{width:80%;box-sizing:border-box;font-size:20px;font-weight:bold;padding:10px;margin:10px 0 4px;border-radius:6px;border:3px solid #5ab4ff;background:#000;color:#fff;text-align:center;font-family:inherit;outline:none}
+#net input:focus{border-color:#ffd84a}
 #net .ls{max-height:min(36vh,220px);overflow-y:auto;margin:6px 0;display:flex;flex-direction:column;gap:6px}
-#net .ls .em{padding:12px 6px;font-size:13px;color:#9ab;border:1px dashed rgba(255,255,255,.25);border-radius:8px}
-#net .ls button.it{display:flex;justify-content:space-between;align-items:center;width:100%;margin:0;background:#1f3a8a;border-color:#5ab4ff}
-#net .ls button.it:active{background:#2a56c8}
-#net .ls button.it small{font-weight:normal;font-size:12px;color:#ffd84a}
-@media (max-height:520px){#net .pn{padding:8px 12px}#net h2{font-size:15px;margin:0}#net p{margin:3px 0;font-size:12px}#net .sp{display:none}#net .st{min-height:20px;margin:4px 0;font-size:13px}#net button{padding:5px 14px;min-height:34px}}`;
+#net .ls .em{padding:14px 6px;font-size:14px;color:#9ab;border:2px dashed rgba(255,255,255,.25);border-radius:6px}
+#net .ls button.it{display:flex;justify-content:space-between;align-items:center;width:100%;margin:0;font-size:16px;background:linear-gradient(#2a56c8,#16308a);border-color:#8fc8ff;box-shadow:0 3px 0 #000;padding:8px 14px}
+#net .ls button.it small{font-size:13px;padding:3px 10px;border-radius:12px;background:#e8402a;border:2px solid #fff;animation:netpop .9s ease-in-out infinite}
+@media (max-height:520px){#net .pn{padding:8px 12px}#net h2{font-size:17px;margin:0 0 4px}#net p{margin:3px 0;font-size:13px}#net .sp{display:none}#net .st{min-height:20px;margin:4px 0;font-size:13px}#net button{padding:5px 14px;min-height:34px;font-size:15px}#net input{padding:6px;margin:4px 0}#net .ls{max-height:90px}}`;
   document.head.appendChild(st);
 }
 /* 입장 전 1단계: 닉네임 입력 → 2단계: 캐릭터 선택(기존 선택 화면) → 3단계: 대기열 */
 function openNetSetup(){
-  if(typeof RTCPeerConnection==='undefined'){mode=0;netMsg='이 브라우저는 P2P 연결을 지원하지 않아요';netMsgT=260;return;}
+  if(typeof RTCPeerConnection==='undefined'){mode=0;netMsg='이 기기에서는 온라인 대전을 할 수 없어요';netMsgT=260;return;}
   netCss();phase='lobby';mode=2;netMe=0;sfx('ok');
   let saved='';try{saved=localStorage.getItem(NICK_KEY)||'';}catch(e){}
   if(netLobby)netLobby.remove();
   netLobby=document.createElement('div');netLobby.id='net';
-  netLobby.innerHTML='<div class="pn"><h2>ONLINE 입장</h2><p>대전에서 보여줄 닉네임을 입력하세요. (최대 8글자)<br>다음 화면에서 싸울 캐릭터를 고릅니다.</p><input id="nk" maxlength="8" autocomplete="off" placeholder="닉네임"><div class="st"></div><button id="ok">다음</button><button class="g" id="nb">취소</button></div>';
+  netLobby.innerHTML='<div class="pn"><h2>온라인 대전</h2><p>내 이름을 정하세요</p><input id="nk" maxlength="8" autocomplete="off" placeholder="이름 (8글자까지)"><div class="st"></div><button id="ok">다음</button><button class="g" id="nb">취소</button></div>';
   document.body.appendChild(netLobby);
   const inp=netLobby.querySelector('#nk');inp.value=netCleanNick(saved);
   const go=()=>{
@@ -835,11 +838,12 @@ function openNetSetup(){
   setTimeout(()=>{try{inp.focus();inp.select();}catch(e){}},50);
 }
 function openLobby(){
-  if(typeof RTCPeerConnection==='undefined'){mode=0;netMsg='이 브라우저는 P2P 연결을 지원하지 않아요';netMsgT=260;return;}
+  if(typeof RTCPeerConnection==='undefined'){mode=0;netMsg='이 기기에서는 온라인 대전을 할 수 없어요';netMsgT=260;return;}
   netCss();phase='lobby';sfx('ok');netBad.clear();
   if(netLobby)netLobby.remove();
   netLobby=document.createElement('div');netLobby.id='net';
-  netLobby.innerHTML='<div class="pn"><h2>ONLINE 대기열</h2><p>'+(NET_LAN_ONLY?'같은 네트워크(같은 네트워크)에서 대기 중인 사람 목록이에요.':'대기 중인 사람 목록이에요.')+'<br>닉네임 · 캐릭터를 보고 상대를 눌러 신청하세요. 대기열에 먼저 있던 사람이 1P(왼쪽), 신청한 사람이 2P(오른쪽)예요.</p><div class="ls"><div class="em">목록을 불러오는 중…</div></div><div class="st"></div><button class="g" id="rt" style="display:none">다시 시도</button><button class="g" id="nb">취소</button></div>';
+  netLobby.innerHTML='<div class="pn"><h2>대전 상대 고르기</h2><div class="me"></div><div class="ls"><div class="em">찾는 중…</div></div><div class="sp"></div><div class="st"></div><button class="g" id="rt" style="display:none">다시 시도</button><button class="g" id="nb">나가기</button></div>';
+  netLobby.querySelector('.me').textContent=netNick+'  ·  '+CH[netCh(netChar)].name;
   document.body.appendChild(netLobby);
   netLobby.querySelector('#nb').onclick=()=>netLeave(null,true);
   netLobby.querySelector('#rt').onclick=()=>{if(!netQ)netQueueStart();};
@@ -906,7 +910,7 @@ function stepGame(){
     }
   }
 }
-function titleOpts(){return IS_TOUCH?[{l:'1P vs CPU',m:0},{l:NET_LAN_ONLY?'ONLINE  (같은 네트워크 한정)':'ONLINE  (대기열)',m:2}]:[{l:'1P vs CPU',m:0},{l:'1P vs 2P  (한 기기)',m:1},{l:NET_LAN_ONLY?'ONLINE  (같은 Wi-Fi 대기열)':'ONLINE  (대기열)',m:2}];}
+function titleOpts(){return IS_TOUCH?[{l:'1P vs CPU',m:0},{l:'온라인 대전',m:2}]:[{l:'1P vs CPU',m:0},{l:'1P vs 2P  (한 기기)',m:1},{l:'온라인 대전',m:2}];}
 function titleY0(){return IS_TOUCH?142:132;}
 function stepTitle(){
   const O=titleOpts();
@@ -1848,7 +1852,7 @@ function drawSelect(){
   if(!bossesOpen()&&!cheatOn){const pr=lockProgress();T('BOSS 해금 '+pr[0]+'/'+pr[1],W-48,10,8,'#ffb0a0',null,null);}
   drawToast();
   if(lockHint)T(lockHint,W/2,267,8,'#ffcc55');
-  else if(netPick)T(sel[0].ok?'대기열로 들어가는 중…   (위쪽 키: 취소)':'싸울 캐릭터를 고르세요 · '+(IS_TOUCH?'초상화를 탭하거나 조이스틱 → A 로 결정':'J / L (또는 ← →) 로 선택, A 로 결정'),W/2,267,8,'#cde');
+  else if(netPick)T(sel[0].ok?'상대를 찾으러 가는 중…   (위쪽 키: 취소)':'싸울 캐릭터를 고르세요 · '+(IS_TOUCH?'초상화를 탭하거나 조이스틱 → A 로 결정':'J / L (또는 ← →) 로 선택, A 로 결정'),W/2,267,8,'#cde');
   else if(mode===0&&!sel[0].ok)T(IS_TOUCH?'조이스틱 ← → ↑ ↓ 로 선택, A 로 결정':'J / L (I / K) 로 선택, A 로 결정',W/2,267,8,'#cde');
   else if(mode===2)T(sel[netMe].ok?'상대가 고를 때까지 기다리는 중…   (위쪽 키: 취소)':(netMe?'나는 2P (오른쪽) · ':'나는 1P (왼쪽) · ')+(IS_TOUCH?'초상화를 탭하거나 조이스틱 → A 로 결정':'J / L (또는 ← →) 로 선택, A 로 결정'),W/2,267,8,'#cde');
   else if(mode===1)T('1P: J / L + A      2P: ← / → + [      (위쪽 키: 취소)',W/2,267,8,'#cde');
