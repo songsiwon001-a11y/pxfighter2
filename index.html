@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>PIXEL FIGHTER 2</title>
+<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABQklEQVR42u3bPw6CMBTHcWY2EkYnR+MJXGT2CB7BO7g6eArP4ik8gi4mngAHxcTGZ9tXyr9+m/wWQoH3CRRoIMverb5s6pSSmS1ZgGZBWe6SygcCAAAAAAAAAABQb6goClUAGDuAtnAAAABgmgCP894rAIwF4D6fR0mswq5V9TMAxAJwPeVjDYJSwbYAYANwPXV9B7/QQVAs6LhyitkPgNCXoVgAtkvPWvjt9IoFAoBQgOX68JXZYvs35vpSbIWLAE3hTRMgAOgLwDXeAGbhZjMgAJgcQPKXQChAnleqaAFs2+38NgjAwACkRHsUBkB5QNoJEe3+XEG8X4cBGCmAK4i5HgBtAXQ9CLYVALQAbT3q9g0CAAAAAABADAAtGAAAAAAAAAAAMFwA1w8gtf2k/gAAAMCwp8TGGgCkf4j5ezwxgCdBxziUPiqpugAAAABJRU5ErkJggg==">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="google-site-verification" content="gbFrd5X0nJg7HGILJPRbL7t30NMJstYZ2BMWEmjxVKw" />
 <style>
@@ -637,6 +638,8 @@ async function netDB(){
   }
   if(!firebase.apps.length)firebase.initializeApp(NET_FIREBASE);
   const db=firebase.firestore(),col=()=>db.collection(NET_COL);
+  /* 하트비트 쓰기와 겹치면 트랜잭션이 failed-precondition/aborted 로 실패하므로 몇 번 다시 시도 */
+  const runTx=async f=>{for(let i=0;;i++){try{return await db.runTransaction(f);}catch(e){const c=e&&e.code;if(i<5&&(c==='failed-precondition'||c==='aborted'||c==='unavailable')){await new Promise(r=>setTimeout(r,120+Math.random()*280));continue;}throw e;}}};
   fbDB={
     async scan(keys){const q=await col().where('buckets','array-contains-any',keys.slice(0,10)).limit(150).get();return q.docs.map(d=>Object.assign({id:d.id},d.data()));},
     async create(id,data){await col().doc(id).set(data);},
@@ -646,7 +649,7 @@ async function netDB(){
     listen(id,cb){return col().doc(id).onSnapshot(sn=>cb(sn.exists?sn.data():null,null,sn.metadata.fromCache),e=>cb(null,e));},
     /* 대결 신청: 상대(id) 방에 내 신청서를 남긴다 (상대가 이미 다른 신청을 받는 중이면 실패) */
     request(me,id,info){
-      return db.runTransaction(async tx=>{
+      return runTx(async tx=>{
         const rx=col().doc(id),sx=await tx.get(rx);
         if(!sx.exists||sx.data().status!=='waiting')return false;
         const r=sx.data().req;
@@ -655,11 +658,11 @@ async function netDB(){
         return true;
       });
     },
-    async cancelReq(id,me){try{await db.runTransaction(async tx=>{const rx=col().doc(id),sx=await tx.get(rx);if(sx.exists&&sx.data().req&&sx.data().req.from===me)tx.update(rx,{req:null});});}catch(e){}},
+    async cancelReq(id,me){try{await runTx(async tx=>{const rx=col().doc(id),sx=await tx.get(rx);if(sx.exists&&sx.data().req&&sx.data().req.from===me)tx.update(rx,{req:null});});}catch(e){}},
     async reject(id,from){await col().doc(id).update({req:null,rej:{from,t:Date.now()}});},
     /* 내 방(me)이 아직 대기 중이고 상대 방(id)도 대기 중일 때만, 내 방을 닫고 상대 방을 차지한다 */
     claim(me,id){
-      return db.runTransaction(async tx=>{
+      return runTx(async tx=>{
         const rm=col().doc(me),rx=col().doc(id);
         const sm=await tx.get(rm),sx=await tx.get(rx);
         if(!sm.exists||!sx.exists)return false;
@@ -805,7 +808,7 @@ async function netQueueStart(){
       }
       if(!q.hosting&&!q.joined)q.incoming(d.req);
     }));
-    q.timers.push(setInterval(()=>{if(alive()&&!q.hosting&&!q.joined)db.update(me,{hb:Date.now()}).catch(()=>{});},3000));
+    q.timers.push(setInterval(()=>{if(alive()&&!q.hosting&&!q.joined&&!q.out&&!q.inc&&!q.busy&&!q.accepting)db.update(me,{hb:Date.now()}).catch(()=>{});},3000));
     /* 대기 중인 사람 목록을 보여주고, 사용자가 직접 고른 상대의 방에 들어간다 (고른 상대가 호스트=1P) */
     q.busy=false;q.out=null;q.inc=null;
     const info=()=>({nick:netNick,ch:netChar,cc:netCC||'??'});
@@ -851,11 +854,13 @@ async function netQueueStart(){
     q.dismissed=new Set();q.seen={};
     q.acceptReq=async req=>{
       q.dismissed.add(req.from+':'+req.t);q.closeInc();say('수락했어요! 준비 중…');
+      q.accepting=true;
       try{
         const ok=await db.claim(req.from,me);
         if(!alive())return;
         if(!ok)say('그 사람은 이미 나갔어요');
-      }catch(e){if(alive())netQueueFail(e);}
+      }catch(e){if(alive()){console.error(e);say('연결 준비에 실패했어요. 다시 시도해 주세요');}}
+      finally{q.accepting=false;}
     };
     q.rejectReq=req=>{q.dismissed.add(req.from+':'+req.t);q.closeInc();db.reject(me,req.from).catch(()=>{});say('거절했어요');};
     q.incoming=req=>{
