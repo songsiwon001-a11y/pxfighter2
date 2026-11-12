@@ -697,7 +697,7 @@ function netCountry(){
   const get=(u,pick)=>{const c=new AbortController(),id=setTimeout(()=>c.abort(),3500);
     return fetch(u,{signal:c.signal}).then(r=>{if(!r.ok)throw 0;return r.json();}).then(pick).finally(()=>clearTimeout(id));};
   netCCP=(async()=>{
-    const tries=[()=>get('https://api.country.is/',j=>j.country),()=>get('https://ipapi.co/json/',j=>j.country_code),()=>get('https://get.geojs.io/v1/ip/country.json',j=>j.country)];
+    const tries=[()=>get('https://ipapi.co/json/',j=>j.country_code),()=>get('https://get.geojs.io/v1/ip/country.json',j=>j.country)];
     for(const t of tries){try{const c=String(await t()||'').toUpperCase();if(/^[A-Z]{2}$/.test(c)){netCC=c;return c;}}catch(e){}}
     const m=(navigator.language||'').match(/[-_]([A-Za-z]{2})$/);
     netCC=m?m[1].toUpperCase():'??';return netCC;
