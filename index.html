@@ -717,7 +717,7 @@ async function netQueueStart(){
     const me=Date.now()+'-'+Math.random().toString(36).slice(2,8);q.id=me;
     await db.create(me,{nick:netNick,ch:netChar,buckets:keys,status:'waiting',guest:null,offer:null,answer:null,hb:Date.now()});
     if(!alive())return;
-    say(NET_LAN_ONLY?'같은 Wi-Fi의 상대를 찾는 중…':'상대를 찾는 중…');
+    say(NET_LAN_ONLY?'같은 네트워크의 상대를 찾는 중…':'상대를 찾는 중…');
     /* 내 방 감시: 누가 들어오면 내가 호스트 */
     q.unsubs.push(db.listen(me,(d,err)=>{
       if(!alive())return;
@@ -747,7 +747,7 @@ async function netQueueStart(){
       const now=Date.now();
       docs.forEach(d=>{if(d.id!==me&&now-(d.hb||0)>120000)db.remove(d.id);});
       const c=docs.filter(d=>d.id!==me&&d.status==='waiting'&&!netBad.has(d.id)&&now-(d.hb||0)<NET_STALE).sort((a,b)=>a.id<b.id?-1:1);
-      if(!q.busy)q.msg=c.length?(NET_LAN_ONLY?'같은 Wi-Fi에 ':'')+c.length+'명이 대기 중이에요. 대결할 상대를 골라 누르세요 (내가 대기열에 올라가 있어서 상대가 나를 골라도 돼요)':(NET_LAN_ONLY?'같은 Wi-Fi에서 ':'')+'다른 사람을 기다리는 중… (대기열에 올라가 있어요)';
+      if(!q.busy)q.msg=c.length?(NET_LAN_ONLY?'같은 네트워크에 ':'')+c.length+'명이 대기 중이에요. 대결할 상대를 골라 누르세요 (내가 대기열에 올라가 있어서 상대가 나를 골라도 돼요)':(NET_LAN_ONLY?'같은 네트워크에서 ':'')+'다른 사람을 기다리는 중… (대기열에 올라가 있어요)';
       netRenderList(c);
     };
     q.timers.push(setInterval(()=>scan().catch(netQueueFail),1500));
@@ -839,7 +839,7 @@ function openLobby(){
   netCss();phase='lobby';sfx('ok');netBad.clear();
   if(netLobby)netLobby.remove();
   netLobby=document.createElement('div');netLobby.id='net';
-  netLobby.innerHTML='<div class="pn"><h2>ONLINE 대기열</h2><p>'+(NET_LAN_ONLY?'같은 Wi-Fi(같은 네트워크)에서 대기 중인 사람 목록이에요.':'대기 중인 사람 목록이에요.')+'<br>닉네임 · 캐릭터를 보고 상대를 눌러 신청하세요. 대기열에 먼저 있던 사람이 1P(왼쪽), 신청한 사람이 2P(오른쪽)예요.</p><div class="ls"><div class="em">목록을 불러오는 중…</div></div><div class="st"></div><button class="g" id="rt" style="display:none">다시 시도</button><button class="g" id="nb">취소</button></div>';
+  netLobby.innerHTML='<div class="pn"><h2>ONLINE 대기열</h2><p>'+(NET_LAN_ONLY?'같은 네트워크(같은 네트워크)에서 대기 중인 사람 목록이에요.':'대기 중인 사람 목록이에요.')+'<br>닉네임 · 캐릭터를 보고 상대를 눌러 신청하세요. 대기열에 먼저 있던 사람이 1P(왼쪽), 신청한 사람이 2P(오른쪽)예요.</p><div class="ls"><div class="em">목록을 불러오는 중…</div></div><div class="st"></div><button class="g" id="rt" style="display:none">다시 시도</button><button class="g" id="nb">취소</button></div>';
   document.body.appendChild(netLobby);
   netLobby.querySelector('#nb').onclick=()=>netLeave(null,true);
   netLobby.querySelector('#rt').onclick=()=>{if(!netQ)netQueueStart();};
@@ -906,7 +906,7 @@ function stepGame(){
     }
   }
 }
-function titleOpts(){return IS_TOUCH?[{l:'1P vs CPU',m:0},{l:NET_LAN_ONLY?'ONLINE  (같은 Wi-Fi 대기열)':'ONLINE  (대기열)',m:2}]:[{l:'1P vs CPU',m:0},{l:'1P vs 2P  (한 기기)',m:1},{l:NET_LAN_ONLY?'ONLINE  (같은 Wi-Fi 대기열)':'ONLINE  (대기열)',m:2}];}
+function titleOpts(){return IS_TOUCH?[{l:'1P vs CPU',m:0},{l:NET_LAN_ONLY?'ONLINE  (같은 네트워크 한정)':'ONLINE  (대기열)',m:2}]:[{l:'1P vs CPU',m:0},{l:'1P vs 2P  (한 기기)',m:1},{l:NET_LAN_ONLY?'ONLINE  (같은 Wi-Fi 대기열)':'ONLINE  (대기열)',m:2}];}
 function titleY0(){return IS_TOUCH?142:132;}
 function stepTitle(){
   const O=titleOpts();
