@@ -493,6 +493,7 @@ function aiInput(f,o){
    ★ 온라인 대전 (대기열 목록에서 상대 선택 + P2P)
    - 대기열(목록)에만 Firebase Firestore(webdos-11d5a)를 쓰고, 실제 대전은 WebRTC P2P 로 직접 주고받는다
    - 대기열에 올라가 있으면 다른 대기자 목록이 보이고, 원하는 상대를 눌러 신청한다. (코드 입력 없음)
+   - 전 세계 대상: IP 로 나라를 알아내 목록에 국기·나라를 보여주고, 나라별 보기 / 이름 검색을 할 수 있다.
    - 대기열에 있던 사람이 호스트(1P, 왼쪽): 게임을 계산해서 매 프레임 화면 상태를 보내고,
      신청한 사람이 게스트(2P, 오른쪽): 자기 조작(키보드/터치)만 호스트로 보낸다.
    - NET_LAN_ONLY=true : 같은 공유기(같은 공인 IP)에 있는 사람끼리만 매칭 / false : 누구와도 매칭
@@ -606,8 +607,8 @@ function netApply(m){
   if(m.q)m.q.forEach(n=>{if(SFX[n])SFX[n]();});
 }
 /* ---- 대기열 (Firestore) ---- */
-const NET_LAN_ONLY=true;
-const NET_COL='pf2_queue',NET_FB='10.12.2',NET_STALE=30000;
+const NET_LAN_ONLY=false; /* false = 전 세계 누구와도 / true = 같은 Wi-Fi 만 */
+const NET_COL='pf2_queue',NET_FB='10.12.2',NET_STALE=12000;
 const NET_FIREBASE={
   apiKey:"AIzaSyDU4famr5DzAYlNpjcTcUUqjzDxEvjVeec",
   authDomain:"webdos-11d5a.firebaseapp.com",
@@ -617,7 +618,11 @@ const NET_FIREBASE={
   appId:"1:500610787415:web:75e8268bcbfd2bef211b12"
 };
 let fbDB=null,netQ=null;const netBad=new Set();
-const netIce=()=>NET_LAN_ONLY?[]:[{urls:'stun:stun.l.google.com:19302'}];
+const netIce=()=>NET_LAN_ONLY?[]:[
+  {urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302','stun:global.stun.twilio.com:3478']},
+  /* 모바일 데이터처럼 직접 연결이 막힌 망을 위한 무료 중계 서버 (안 되면 연결이 안 될 수 있음) */
+  {urls:['turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turn:openrelay.metered.ca:443?transport=tcp'],username:'openrelayproject',credential:'openrelayproject'}
+];
 function netLoad(src){return new Promise((res,rej)=>{const e=document.createElement('script');e.src=src;e.onload=res;e.onerror=()=>rej(new Error('접속하지 못했어요. 인터넷 연결을 확인해 주세요'));document.head.appendChild(e);});}
 async function netDB(){
   if(fbDB)return fbDB;
@@ -628,11 +633,25 @@ async function netDB(){
   if(!firebase.apps.length)firebase.initializeApp(NET_FIREBASE);
   const db=firebase.firestore(),col=()=>db.collection(NET_COL);
   fbDB={
-    async scan(keys){const q=await col().where('buckets','array-contains-any',keys.slice(0,10)).get();return q.docs.map(d=>Object.assign({id:d.id},d.data()));},
+    async scan(keys){const q=await col().where('buckets','array-contains-any',keys.slice(0,10)).limit(150).get();return q.docs.map(d=>Object.assign({id:d.id},d.data()));},
     async create(id,data){await col().doc(id).set(data);},
     async update(id,patch){await col().doc(id).update(patch);},
+    async push(id,field,val){await col().doc(id).update({[field]:firebase.firestore.FieldValue.arrayUnion(val)});},
     async remove(id){try{await col().doc(id).delete();}catch(e){}},
     listen(id,cb){return col().doc(id).onSnapshot(sn=>cb(sn.exists?sn.data():null),e=>cb(null,e));},
+    /* 대결 신청: 상대(id) 방에 내 신청서를 남긴다 (상대가 이미 다른 신청을 받는 중이면 실패) */
+    request(me,id,info){
+      return db.runTransaction(async tx=>{
+        const rx=col().doc(id),sx=await tx.get(rx);
+        if(!sx.exists||sx.data().status!=='waiting')return false;
+        const r=sx.data().req;
+        if(r&&r.from&&r.from!==me&&Math.abs(Date.now()-(r.t||0))<25000)return false;
+        tx.update(rx,{req:Object.assign({from:me,t:Date.now()},info),rej:null});
+        return true;
+      });
+    },
+    async cancelReq(id,me){try{await db.runTransaction(async tx=>{const rx=col().doc(id),sx=await tx.get(rx);if(sx.exists&&sx.data().req&&sx.data().req.from===me)tx.update(rx,{req:null});});}catch(e){}},
+    async reject(id,from){await col().doc(id).update({req:null,rej:{from,t:Date.now()}});},
     /* 내 방(me)이 아직 대기 중이고 상대 방(id)도 대기 중일 때만, 내 방을 닫고 상대 방을 차지한다 */
     claim(me,id){
       return db.runTransaction(async tx=>{
@@ -640,7 +659,7 @@ async function netDB(){
         const sm=await tx.get(rm),sx=await tx.get(rx);
         if(!sm.exists||!sx.exists)return false;
         if(sm.data().status!=='waiting'||sx.data().status!=='waiting')return false;
-        tx.update(rm,{status:'closed'});tx.update(rx,{status:'claimed',guest:me});
+        tx.update(rm,{status:'closed'});tx.update(rx,{status:'claimed',guest:me,req:null});
         return true;
       });
     }
@@ -662,27 +681,75 @@ async function netDiscover(){
   if(!keys.size)throw new Error('같은 Wi-Fi를 찾지 못했어요. 인터넷 연결을 확인해 주세요');
   return [...keys];
 }
+/* 내 나라 (IP 로 확인, 실패하면 언어 설정으로 추측) */
+let netCC=null,netCCP=null;
+function netCountry(){
+  if(netCC)return Promise.resolve(netCC);
+  if(netCCP)return netCCP;
+  const get=(u,pick)=>{const c=new AbortController(),id=setTimeout(()=>c.abort(),3500);
+    return fetch(u,{signal:c.signal}).then(r=>{if(!r.ok)throw 0;return r.json();}).then(pick).finally(()=>clearTimeout(id));};
+  netCCP=(async()=>{
+    const tries=[()=>get('https://api.country.is/',j=>j.country),()=>get('https://ipapi.co/json/',j=>j.country_code),()=>get('https://get.geojs.io/v1/ip/country.json',j=>j.country)];
+    for(const t of tries){try{const c=String(await t()||'').toUpperCase();if(/^[A-Z]{2}$/.test(c)){netCC=c;return c;}}catch(e){}}
+    const m=(navigator.language||'').match(/[-_]([A-Za-z]{2})$/);
+    netCC=m?m[1].toUpperCase():'??';return netCC;
+  })();
+  return netCCP;
+}
+function netFlag(cc){return/^[A-Z]{2}$/.test(cc||'')?String.fromCodePoint(...[...cc].map(c=>127397+c.charCodeAt(0))):'🌐';}
+function netCName(cc){
+  if(!/^[A-Z]{2}$/.test(cc||''))return '알 수 없음';
+  try{return new Intl.DisplayNames(['ko'],{type:'region'}).of(cc)||cc;}catch(e){return cc;}
+}
+function netMeLabel(){const e=netLobby&&netLobby.querySelector('.me');if(e)e.textContent=netNick+'  ·  '+CH[netCh(netChar)].name+(netCC?'  ·  '+netFlag(netCC)+' '+netCName(netCC):'');}
 /* 대기열 목록 그리기: 대기 중인 사람마다 버튼 한 줄 */
+let netAll=[];
 function netRenderList(list){
+  if(list)netAll=list;
   const box=netLobby&&netLobby.querySelector('.ls');if(!box)return;
-  const sig=list.map(d=>d.id).join('|');
-  if(box.dataset.sig===sig){
-    box.querySelectorAll('button').forEach((b,i)=>{const w=Math.max(0,Math.floor((Date.now()-(parseInt(list[i].id)||Date.now()))/1000));});
-    return;
+  const sl=netLobby.querySelector('#sc'),qi=netLobby.querySelector('#sq');
+  if(sl){
+    const cnt={};netAll.forEach(d=>{const c=d.cc||'??';cnt[c]=(cnt[c]||0)+1;});
+    const ks=Object.keys(cnt).sort((x,y)=>cnt[y]-cnt[x]||x.localeCompare(y));
+    const sg=ks.map(k=>k+cnt[k]).join(',')+'#'+netAll.length;
+    if(sl.dataset.sig!==sg){
+      const cur=sl.value;sl.dataset.sig=sg;sl.innerHTML='';
+      const o0=document.createElement('option');o0.value='';o0.textContent='🌍 전 세계 ('+netAll.length+')';sl.appendChild(o0);
+      ks.forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=netFlag(k)+' '+netCName(k)+' ('+cnt[k]+')';sl.appendChild(o);});
+      sl.value=[...sl.options].some(o=>o.value===cur)?cur:'';
+    }
   }
+  const f=sl?sl.value:'',qs=(qi?qi.value:'').trim().toLowerCase();
+  const out=netAll.filter(d=>(!f||(d.cc||'??')===f)&&(!qs||netCleanNick(d.nick).toLowerCase().includes(qs)));
+  out.sort((x,y)=>((y.cc===netCC)-(x.cc===netCC))||(x.id<y.id?-1:1));
+  const sig=out.map(d=>d.id).join('|')+'#'+netAll.length;
+  if(box.dataset.sig===sig)return;
   box.dataset.sig=sig;box.innerHTML='';
-  if(!list.length){const e=document.createElement('div');e.className='em';e.textContent='아직 대기 중인 사람이 없어요';box.appendChild(e);return;}
-  list.forEach(d=>{
+  if(!out.length){const e=document.createElement('div');e.className='em';e.textContent=netAll.length?'조건에 맞는 사람이 없어요':'아직 대기 중인 사람이 없어요';box.appendChild(e);return;}
+  out.forEach(d=>{
     const b=document.createElement('button');b.className='it';
-    const w=Math.max(0,Math.floor((Date.now()-(parseInt(d.id)||Date.now()))/1000));
     const nm=netCleanNick(d.nick)||('플레이어 '+String(d.id).slice(-4).toUpperCase());
-    const cn=CH[netCh(d.ch)].name;
-    const l=document.createElement('span');l.textContent=nm+'  ·  '+cn;
+    const tx=document.createElement('span');tx.className='tx';
+    const l1=document.createElement('b');l1.textContent=netFlag(d.cc)+' '+nm;
+    const l2=document.createElement('i');l2.textContent=CH[netCh(d.ch)].name+' · '+netCName(d.cc);
+    tx.appendChild(l1);tx.appendChild(l2);
     const r=document.createElement('small');r.textContent='대결!';
-    b.appendChild(l);b.appendChild(r);
-    b.onclick=()=>{if(netQ&&netQ.join)netQ.join(d.id);};
+    b.appendChild(tx);b.appendChild(r);
+    b.onclick=()=>{if(netQ&&netQ.join)netQ.join(d.id,nm);};
     box.appendChild(b);
   });
+}
+function netEsc(t){return String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function netModalClose(){const m=netLobby&&netLobby.querySelector('.md');if(m)m.remove();}
+/* 로비 위에 뜨는 작은 창 (신청 보내는 중 / 신청 받음) */
+function netModal(title,who,sub,cd,btns){
+  netModalClose();
+  const h={};if(!netLobby)return h;
+  const md=document.createElement('div');md.className='md';
+  md.innerHTML='<div class="mb"><h3>'+title+'</h3><div class="who">'+who+'</div><div class="sub">'+sub+'</div><div class="cd"></div><div class="bt"></div></div>';
+  h.sub=md.querySelector('.sub');h.cd=md.querySelector('.cd');
+  btns.forEach(b=>{const e=document.createElement('button');e.textContent=b[0];if(b[2])e.className=b[2];e.onclick=b[1];md.querySelector('.bt').appendChild(e);});
+  netLobby.appendChild(md);return h;
 }
 function netQStatus(t){const e=netLobby&&netLobby.querySelector('.st');if(e)e.textContent=t;}
 function netQueueStop(){
@@ -690,6 +757,7 @@ function netQueueStop(){
   netQ=null;q.cancel=true;
   q.unsubs.forEach(f=>{try{f();}catch(e){}});
   q.timers.forEach(t=>{clearInterval(t);clearTimeout(t);});
+  if(q.out&&fbDB)fbDB.cancelReq(q.out.id,q.id);
   if(q.id&&fbDB)fbDB.remove(q.id);
 }
 function netQueueRestart(msg){
@@ -706,16 +774,17 @@ async function netQueueStart(){
   const q=netQ={cancel:false,id:null,hosting:false,joined:false,gotAnswer:false,unsubs:[],timers:[],t0:Date.now(),msg:''};
   const alive=()=>netQ===q&&!q.cancel;
   const paint=()=>netQStatus(q.msg+'  ('+Math.floor((Date.now()-q.t0)/1000)+'초)');
-  const say=t=>{q.msg=t;paint();};
+  const say=t=>{q.msg=t;q.sayAt=Date.now();paint();};
   q.timers.push(setInterval(paint,1000));
   const r=netLobby&&netLobby.querySelector('#rt');if(r)r.style.display='none';
   try{
     say('접속하는 중…');
     const db=await netDB();if(!alive())return;
-    say(NET_LAN_ONLY?'같은 Wi-Fi를 찾는 중…':'준비하는 중…');
+    say('내 나라를 확인하는 중…');
     const keys=await netDiscover();if(!alive())return;
+    const cc=await netCountry();if(!alive())return;
     const me=Date.now()+'-'+Math.random().toString(36).slice(2,8);q.id=me;
-    await db.create(me,{nick:netNick,ch:netChar,buckets:keys,status:'waiting',guest:null,offer:null,answer:null,hb:Date.now()});
+    await db.create(me,{nick:netNick,ch:netChar,cc,buckets:keys,status:'waiting',guest:null,offer:null,answer:null,hb:Date.now()});
     if(!alive())return;
     say('상대를 찾는 중…');
     /* 내 방 감시: 누가 들어오면 내가 호스트 */
@@ -723,22 +792,80 @@ async function netQueueStart(){
       if(!alive())return;
       if(err){netQueueFail(err);return;}
       if(!d)return;
-      if(d.status==='claimed'&&!q.hosting&&!q.joined){q.hosting=true;netHostConnect(q,db,me,say);}
-      if(q.hosting&&d.answer&&!q.gotAnswer&&netPC){q.gotAnswer=true;netPC.setRemoteDescription(d.answer).catch(()=>netQueueRestart('연결이 안 됐어요. 다시 찾는 중…'));}
+      if(d.status==='claimed'&&!q.hosting&&!q.joined){q.hosting=true;if(q.out)q.cancelOut(null,true);q.closeInc();netHostConnect(q,db,me,say);}
+      q.last=d;
+      if(q.hosting&&netPC){
+        if(d.answer&&!q.gotAnswer){q.gotAnswer=true;netPC.setRemoteDescription(d.answer).then(()=>netPump(q,netPC,q.last.gc,'gcN')).catch(()=>netQueueRestart('연결이 안 됐어요. 다시 찾는 중…'));}
+        else netPump(q,netPC,d.gc,'gcN');
+      }
+      if(!q.hosting&&!q.joined)q.incoming(d.req);
     }));
-    q.timers.push(setInterval(()=>{if(alive()&&!q.hosting&&!q.joined)db.update(me,{hb:Date.now()}).catch(()=>{});},5000));
+    q.timers.push(setInterval(()=>{if(alive()&&!q.hosting&&!q.joined)db.update(me,{hb:Date.now()}).catch(()=>{});},3000));
     /* 대기 중인 사람 목록을 보여주고, 사용자가 직접 고른 상대의 방에 들어간다 (고른 상대가 호스트=1P) */
-    q.busy=false;
-    q.join=async id=>{
-      if(!alive()||q.hosting||q.joined||q.busy)return;
+    q.busy=false;q.out=null;q.inc=null;
+    const info=()=>({nick:netNick,ch:netChar,cc:netCC||'??'});
+    /* ---- 내가 신청하기 ---- */
+    q.cancelOut=(msg,quiet)=>{
+      const o=q.out;if(!o)return;q.out=null;
+      clearTimeout(o.timer);clearInterval(o.tick);try{o.unsub&&o.unsub();}catch(e){}
+      db.cancelReq(o.id,me);
+      if(!quiet){netModalClose();if(msg)say(msg);netRenderList();}
+    };
+    q.join=async (id,who)=>{
+      if(!alive()||q.hosting||q.joined||q.busy||q.out)return;
       q.busy=true;say('대결 신청 중…');
       try{
-        const ok=await db.claim(me,id);
+        const ok=await db.request(me,id,info());
         if(!alive())return;
-        if(ok){q.joined=true;netRenderList([]);netGuestJoin(q,db,id,say);}
-        else{say('그 사람은 이미 다른 대결 중이에요. 다른 상대를 골라보세요');scan().catch(()=>{});}
+        if(!ok){say('그 사람은 지금 다른 신청을 받는 중이에요. 잠시 후 다시 눌러보세요');scan().catch(()=>{});return;}
+        const o=q.out={id,at:Date.now()};
+        const sec=()=>Math.max(0,20-Math.floor((Date.now()-o.at)/1000));
+        const m=netModal('⚔ 대결 신청','<b>'+netEsc(who||'상대')+'</b> 님에게 대결을 신청했어요','대답을 기다리는 중…','',[['취소',()=>q.cancelOut('신청을 취소했어요'),'g']]);
+        o.tick=setInterval(()=>{if(m.sub)m.sub.textContent='대답을 기다리는 중…  ('+sec()+'초)';},500);
+        o.timer=setTimeout(()=>q.cancelOut('대답이 없어요. 다른 상대를 골라보세요'),20000);
+        q.timers.push(o.tick,o.timer);
+        o.unsub=db.listen(id,(d,err)=>{
+          if(!alive()||q.out!==o||q.hosting||q.joined)return;
+          if(err||!d){q.cancelOut('그 사람이 나갔어요');return;}
+          if(d.status==='claimed'&&d.guest===me){
+            q.out=null;clearTimeout(o.timer);clearInterval(o.tick);try{o.unsub();}catch(e){}
+            netModalClose();q.joined=true;netGuestJoin(q,db,id,say);return;
+          }
+          if(d.rej&&d.rej.from===me){q.cancelOut('거절당했어요. 다른 상대를 골라보세요');return;}
+          if(d.status!=='waiting'){q.cancelOut('그 사람은 다른 대결을 시작했어요');return;}
+          if(!d.req||d.req.from!==me){q.cancelOut('신청이 취소됐어요');return;}
+        });
+        q.unsubs.push(o.unsub);
       }catch(e){if(alive())netQueueFail(e);}
       finally{q.busy=false;}
+    };
+    /* ---- 내가 신청 받기 (수락 / 거절) ---- */
+    q.closeInc=()=>{const c=q.inc;if(!c)return;q.inc=null;clearInterval(c.tick);netModalClose();};
+    q.acceptReq=async req=>{
+      q.closeInc();say('수락했어요! 준비 중…');
+      try{
+        const ok=await db.claim(req.from,me);
+        if(!alive())return;
+        if(!ok)say('그 사람은 이미 나갔어요');
+      }catch(e){if(alive())netQueueFail(e);}
+    };
+    q.rejectReq=req=>{q.closeInc();db.reject(me,req.from).catch(()=>{});say('거절했어요');};
+    q.incoming=req=>{
+      const fresh=req&&req.from&&Math.abs(Date.now()-(req.t||0))<45000;
+      const cur=q.inc;
+      if(!fresh){if(cur)q.closeInc();return;}
+      if(cur&&cur.t===req.t)return;
+      if(q.out&&q.out.id===req.from){q.acceptReq(req);return;}   /* 서로 신청했으면 바로 연결 */
+      if(q.out||q.busy)return;                                    /* 내가 신청하는 중이면 잠깐 보류(몇 초 뒤 다시 확인) */
+      q.closeInc();
+      const c=q.inc={t:req.t,at:Date.now()};
+      const sec=()=>Math.max(0,20-Math.floor((Date.now()-c.at)/1000));
+      const nm=netCleanNick(req.nick)||'누군가';
+      const m=netModal('⚔ 대결 신청이 왔어요!','<b>'+netFlag(req.cc)+' '+netEsc(nm)+'</b>',netEsc(CH[netCh(req.ch)].name)+' · '+netEsc(netCName(req.cc)),'',
+        [['수락',()=>q.acceptReq(req)],['거절',()=>q.rejectReq(req),'g']]);
+      sfx('go');
+      c.tick=setInterval(()=>{const n=sec();if(m.cd)m.cd.textContent=n+'초 안에 대답하세요';if(n<=0)q.rejectReq(req);},500);
+      q.timers.push(c.tick);
     };
     const scan=async()=>{
       if(!alive()||q.hosting||q.joined)return;
@@ -747,12 +874,18 @@ async function netQueueStart(){
       const now=Date.now();
       docs.forEach(d=>{if(d.id!==me&&now-(d.hb||0)>120000)db.remove(d.id);});
       const c=docs.filter(d=>d.id!==me&&d.status==='waiting'&&!netBad.has(d.id)&&now-(d.hb||0)<NET_STALE).sort((a,b)=>a.id<b.id?-1:1);
-      if(!q.busy)q.msg=c.length?'대결할 상대를 눌러 보세요!':'상대를 기다리는 중…  (친구도 온라인 대전에 들어오면 나타나요)';
+      if(!q.busy&&Date.now()-(q.sayAt||0)>4000)q.msg=c.length?'대결할 상대를 눌러 보세요!':'상대를 기다리는 중…  (친구도 온라인 대전에 들어오면 나타나요)';
       netRenderList(c);
     };
     q.timers.push(setInterval(()=>scan().catch(netQueueFail),1500));
     scan().catch(netQueueFail);
   }catch(e){if(alive())netQueueFail(e);}
+}
+/* 연결 정보(ICE 후보)는 모으는 대로 바로바로 주고받는다 → 두 사람이 정확히 같은 때에 누르지 않아도 연결돼요 */
+function netPump(q,pc,list,key){
+  if(!pc||!pc.remoteDescription||!list)return;
+  q[key]=q[key]||0;
+  while(q[key]<list.length){const c=list[q[key]++];try{pc.addIceCandidate(JSON.parse(c)).catch(()=>{});}catch(e){}}
 }
 async function netHostConnect(q,db,me,say){
   try{
@@ -761,10 +894,11 @@ async function netHostConnect(q,db,me,say){
     const pc=netPC=new RTCPeerConnection({iceServers:netIce()});
     netBindPC(pc,()=>netQueueRestart('연결이 안 됐어요. 다시 찾는 중…'));
     netBindDC(pc.createDataChannel('g'));
-    await pc.setLocalDescription(await pc.createOffer());await netGather(pc);
+    pc.onicecandidate=e=>{if(e.candidate)db.push(me,'hc',JSON.stringify(e.candidate)).catch(()=>{});};
+    await pc.setLocalDescription(await pc.createOffer());
     if(netQ!==q||q.cancel)return;
     await db.update(me,{offer:{type:pc.localDescription.type,sdp:pc.localDescription.sdp}});
-    q.timers.push(setTimeout(()=>{if(netQ===q&&!netOpen)netQueueRestart('연결이 안 됐어요. 다시 찾는 중…');},15000));
+    q.timers.push(setTimeout(()=>{if(netQ===q&&!netOpen)netQueueRestart('연결이 안 됐어요. 다시 찾는 중…');},25000));
   }catch(e){if(netQ===q)netQueueRestart('연결이 안 됐어요. 다시 찾는 중…');}
 }
 function netGuestJoin(q,db,docId,say){
@@ -775,7 +909,10 @@ function netGuestJoin(q,db,docId,say){
       const pc=netPC=new RTCPeerConnection({iceServers:netIce()});
       netBindPC(pc,()=>netQueueRestart('연결이 안 됐어요. 다시 찾는 중…'));
       pc.ondatachannel=e=>netBindDC(e.channel);
-      await pc.setRemoteDescription(offer);await pc.setLocalDescription(await pc.createAnswer());await netGather(pc);
+      pc.onicecandidate=e=>{if(e.candidate)db.push(docId,'gc',JSON.stringify(e.candidate)).catch(()=>{});};
+      await pc.setRemoteDescription(offer);
+      netPump(q,pc,q.last&&q.last.hc,'hcN');
+      await pc.setLocalDescription(await pc.createAnswer());
       if(netQ!==q||q.cancel)return;
       await db.update(docId,{answer:{type:pc.localDescription.type,sdp:pc.localDescription.sdp}});
     }catch(e){if(netQ===q)netQueueRestart('연결이 안 됐어요. 다시 찾는 중…');}
@@ -784,9 +921,13 @@ function netGuestJoin(q,db,docId,say){
   q.unsubs.push(db.listen(docId,(d,err)=>{
     if(netQ!==q||q.cancel)return;
     if(err||!d){if(!q.answered)netQueueRestart('상대가 나갔어요. 다시 찾는 중…');return;}
+    q.last=d;
     if(d.offer&&!q.answered){q.answered=true;answer(d.offer);}
+    else if(q.answered)netPump(q,netPC,d.hc,'hcN');
   }));
-  q.timers.push(setTimeout(()=>{if(netQ===q&&!netOpen){netBad.add(docId);netQueueRestart('연결이 안 됐어요. 다시 찾는 중…');}},15000));
+  /* 상대가 10초 안에 반응이 없으면(앱을 닫았거나 멈춘 사람) 그 사람은 빼고 다시 목록으로 */
+  q.timers.push(setTimeout(()=>{if(netQ===q&&!q.answered){netBad.add(docId);netQueueRestart('그 사람은 응답이 없어요. 다른 상대를 골라보세요');}},10000));
+  q.timers.push(setTimeout(()=>{if(netQ===q&&!netOpen){netBad.add(docId);netQueueRestart('연결이 안 됐어요. 다시 찾는 중…');}},25000));
 }
 /* ---- 대기열 화면 ---- */
 function netCss(){
@@ -805,18 +946,30 @@ function netCss(){
 #net button:active{transform:translateY(2px);box-shadow:0 1px 0 #000}
 #net button.g{background:linear-gradient(#667,#334);border-color:#aab;font-size:14px;padding:8px 16px;min-height:38px}
 #net input{width:80%;box-sizing:border-box;font-size:20px;font-weight:bold;padding:10px;margin:10px 0 4px;border-radius:6px;border:3px solid #5ab4ff;background:#000;color:#fff;text-align:center;font-family:inherit;outline:none}
+#net input{-webkit-user-select:text;user-select:text;-webkit-appearance:none}
 #net input:focus{border-color:#ffd84a}
 #net .ls{max-height:min(36vh,220px);overflow-y:auto;margin:6px 0;display:flex;flex-direction:column;gap:6px}
+#net .md{position:absolute;left:0;top:0;right:0;bottom:0;z-index:2;display:flex;align-items:center;justify-content:center;background:rgba(0,0,12,.78)}
+#net .mb{width:min(86vw,360px);padding:16px 18px;border:3px solid #ff6a4a;border-radius:6px;background:linear-gradient(#2a1450,#120a30);box-shadow:0 0 0 3px #000,0 0 26px rgba(255,100,60,.5);text-align:center;animation:netpop .9s ease-in-out infinite}
+#net .mb h3{margin:0 0 8px;font-size:19px;color:#ffd84a;text-shadow:2px 2px 0 #6a2410}
+#net .mb .who{font-size:20px;color:#fff;margin:4px 0}
+#net .mb .sub{font-size:14px;color:#cde;min-height:20px}
+#net .mb .cd{font-size:13px;color:#ffd84a;min-height:18px;margin:4px 0}
+#net .fl{display:flex;gap:6px;margin:4px 0}
+#net .fl input,#net .fl select{flex:1;min-width:0;margin:0;font-size:15px;padding:8px;border-radius:6px;border:2px solid #5ab4ff;background:#000;color:#fff;font-family:inherit;text-align:left;width:auto}
+#net .ls button.it{flex:none;line-height:1.25}
+#net .ls .tx{display:flex;flex-direction:column;align-items:flex-start;text-align:left;min-width:0}
+#net .ls .tx i{font-style:normal;font-weight:normal;font-size:12px;color:#bcd}
 #net .ls .em{padding:14px 6px;font-size:14px;color:#9ab;border:2px dashed rgba(255,255,255,.25);border-radius:6px}
 #net .ls button.it{display:flex;justify-content:space-between;align-items:center;width:100%;margin:0;font-size:16px;background:linear-gradient(#2a56c8,#16308a);border-color:#8fc8ff;box-shadow:0 3px 0 #000;padding:8px 14px}
 #net .ls button.it small{font-size:13px;padding:3px 10px;border-radius:12px;background:#e8402a;border:2px solid #fff;animation:netpop .9s ease-in-out infinite}
-@media (max-height:520px){#net .pn{padding:8px 12px}#net h2{font-size:17px;margin:0 0 4px}#net p{margin:3px 0;font-size:13px}#net .sp{display:none}#net .st{min-height:20px;margin:4px 0;font-size:13px}#net button{padding:5px 14px;min-height:34px;font-size:15px}#net input{padding:6px;margin:4px 0}#net .ls{max-height:90px}}`;
+@media (max-height:520px){#net .pn{padding:8px 12px}#net h2{font-size:17px;margin:0 0 4px}#net p{margin:3px 0;font-size:13px}#net .sp{display:none}#net .st{min-height:20px;margin:4px 0;font-size:13px}#net button{padding:5px 14px;min-height:34px;font-size:15px}#net input{padding:6px;margin:4px 0}#net .ls{max-height:96px}#net .ls button.it{min-height:46px;padding:4px 12px}}`;
   document.head.appendChild(st);
 }
 /* 입장 전 1단계: 닉네임 입력 → 2단계: 캐릭터 선택(기존 선택 화면) → 3단계: 대기열 */
 function openNetSetup(){
   if(typeof RTCPeerConnection==='undefined'){mode=0;netMsg='이 기기에서는 온라인 대전을 할 수 없어요';netMsgT=260;return;}
-  netCss();phase='lobby';mode=2;netMe=0;sfx('ok');
+  netCss();phase='lobby';mode=2;netMe=0;sfx('ok');netCountry();
   let saved='';try{saved=localStorage.getItem(NICK_KEY)||'';}catch(e){}
   if(netLobby)netLobby.remove();
   netLobby=document.createElement('div');netLobby.id='net';
@@ -842,14 +995,18 @@ function openLobby(){
   netCss();phase='lobby';sfx('ok');netBad.clear();
   if(netLobby)netLobby.remove();
   netLobby=document.createElement('div');netLobby.id='net';
-  netLobby.innerHTML='<div class="pn"><h2>대전 상대 고르기</h2><div class="me"></div><div class="ls"><div class="em">찾는 중…</div></div><div class="sp"></div><div class="st"></div><button class="g" id="rt" style="display:none">다시 시도</button><button class="g" id="nb">나가기</button></div>';
-  netLobby.querySelector('.me').textContent=netNick+'  ·  '+CH[netCh(netChar)].name;
+  netLobby.innerHTML='<div class="pn"><h2>대전 상대 고르기</h2><div class="me"></div><div class="fl"><input id="sq" maxlength="8" placeholder="🔍 이름 검색" autocomplete="off"><select id="sc"><option value="">🌍 전 세계</option></select></div><div class="ls"><div class="em">찾는 중…</div></div><div class="sp"></div><div class="st"></div><button class="g" id="rt" style="display:none">다시 시도</button><button class="g" id="nb">나가기</button></div>';
+  netMeLabel();
+  netLobby.querySelector('#sq').oninput=()=>netRenderList();
+  netLobby.querySelector('#sc').onchange=()=>netRenderList();
+  netAll=[];netCountry().then(netMeLabel);
   document.body.appendChild(netLobby);
   netLobby.querySelector('#nb').onclick=()=>netLeave(null,true);
   netLobby.querySelector('#rt').onclick=()=>{if(!netQ)netQueueStart();};
   netQueueStart();
 }
 addEventListener('beforeunload',()=>{if(netQ&&netQ.id&&fbDB)fbDB.remove(netQ.id);});
+addEventListener('pagehide',()=>{if(netQ&&netQ.id&&fbDB)fbDB.remove(netQ.id);});
 
 /* ---------------- 진행 ---------------- */
 function endRound(kind){
