@@ -55,6 +55,8 @@ select{width:100%;background:#0b0e1e;border:1px solid #333b66;color:#fff;border-
     <input type="text" id="name" maxlength="10">
     <label>카트 색상</label>
     <div class="sw" id="colors"></div>
+    <label>카트 종류</label>
+    <div class="maps" id="kartTypes"></div>
     <div class="row">
       <button class="btn" id="bSolo">혼자 플레이</button>
       <button class="btn sec" id="bMulti">멀티플레이</button>
@@ -149,6 +151,14 @@ const MAPS = [
 ];
 [16, 22, 26, 0].forEach((h, i) => MAPS[i].hill = h);
 const KC = [0xe53935, 0x1e88e5, 0xfdd835, 0x43a047, 0x8e24aa, 0xfb8c00, 0x00bcd4, 0xec407a, 0xeeeeee, 0x37474f];
+const KT = [
+  { n: '스탠다드', d: '균형 잡힌 포뮬러', sp: 1, ac: 1, st: 1, gr: 1 },
+  { n: '버기', d: '가속·핸들 좋음 / 최고속 낮음', sp: .93, ac: 1.2, st: 1.1, gr: .9 },
+  { n: '머슬카', d: '최고속 빠름 / 코너 둔함', sp: 1.08, ac: .95, st: .88, gr: 1 },
+  { n: '로켓', d: '미친 최고속 / 느린 가속', sp: 1.14, ac: .78, st: .82, gr: 1.1 },
+  { n: '트럭', d: '묵직해서 박치기에 강함', sp: .97, ac: .85, st: .8, gr: 1.2, ms: 1.6 },
+  { n: '미니', d: '작고 날렵한 기동성', sp: .92, ac: 1.15, st: 1.2, gr: .8 }
+];
 const BOTN = ['번개', '터보', '초코', '마루', '바람', '로켓', '쿠키', '별이', '다람', '호랑'];
 
 /* ---------------------------------------------------------------- GL */
@@ -420,8 +430,8 @@ function minimap(tr) {
 
 /* kart models */
 const kartCache = {};
-function kartMesh(ci) {
-  if (kartCache[ci]) return kartCache[ci];
+function kartMesh(ci, kt = 0) {
+  const key = ci + '_' + kt; if (kartCache[key]) return kartCache[key]; if (kt) return kartCache[key] = kartAlt(ci, kt);
   const m = new MB(), c = C(KC[ci]), dk = C(0x1b1b20), tire = C(0x0e0e10), rim = C(0xcfd3d8);
   m.box(0, .78, .1, 1.7, .46, 2.9, c); m.box(0, .66, 2.0, 1.1, .34, 1.5, c); m.box(0, .5, 2.9, 2.3, .1, .6, dk);
   for (const sx of [-1, 1]) { m.box(sx * 1.12, .6, 3.0, .08, .4, .6, c); m.box(sx * 1.0, .72, -.1, .4, .5, 1.7, c); m.box(sx * .42, 1.05, -1.7, .18, .22, .8, C(0x9a9ea5)); }
@@ -435,7 +445,35 @@ function kartMesh(ci) {
     m.cyl(sx * 1.25, .56, -1.3, .6, .6, 14, tire, 0); m.cyl(sx * 1.57, .56, -1.3, .36, .04, 10, rim, 0);
   }
   m.box(0, .2, 0, 2.0, .04, 3.6, C(0x08080a));
-  return kartCache[ci] = m.build();
+  return kartCache[key] = m.build();
+}
+function kartAlt(ci, kt) {
+  const m = new MB(), c = C(KC[ci]), dk = C(0x1b1b20), tire = C(0x0e0e10), rim = C(0xcfd3d8), gl = C(0x10131a), hl = C(0xfff3b0), sv = C(0x9a9ea5), w = C(0xf2f2f2);
+  const wh = (x, z, r, t) => { m.cyl(x, r, z, r, t, 14, tire, 0); m.cyl(x + Math.sign(x) * (t / 2 + .01), r, z, r * .6, .04, 10, rim, 0); };
+  const head = (y, z) => { m.sph(0, y, z, .4, .45, .35, 10, w); m.sph(0, y + .62, z + .1, .34, .36, .38, 12, w); m.box(0, y + .62, z + .42, .5, .16, .1, gl); };
+  if (kt === 1) { // 오프로드 버기
+    m.box(0, 1.0, 0, 1.6, .4, 3.0, c); m.box(0, 1.5, -.9, 1.5, .2, 1.4, dk); m.box(0, 1.1, 2.2, 1.2, .3, 1.0, c); m.box(0, .9, -1.9, 1.5, .4, .5, dk); head(1.9, -.3);
+    for (const sx of [-1, 1]) { m.box(sx * .8, 2.0, .5, .1, 1.8, .1, dk); m.box(sx * .8, 2.0, -1.3, .1, 1.8, .1, dk); m.box(sx * .8, 2.9, -.4, .1, .1, 1.9, dk); }
+    m.box(0, 2.95, -.4, 1.7, .1, .1, dk); wh(-1.3, 1.5, .8, .8); wh(1.3, 1.5, .8, .8); wh(-1.3, -1.3, .9, .9); wh(1.3, -1.3, .9, .9);
+  } else if (kt === 2) { // 머슬카
+    m.box(0, .85, .2, 2.0, .6, 3.8, c); m.box(0, .7, 2.2, 1.8, .45, 1.2, c); m.box(0, 1.45, -.1, 1.5, .55, 1.8, c); m.box(0, 1.5, .81, 1.4, .4, .06, gl); m.box(0, 1.5, -1.01, 1.4, .4, .06, gl);
+    for (const sx of [-1, 1]) { m.box(sx * .76, 1.5, -.1, .05, .4, 1.5, gl); m.box(sx * .6, .9, 2.8, .4, .2, .05, hl); m.box(sx * .8, 1.75, -1.9, .1, .5, .1, dk); }
+    m.box(0, 1.16, .9, .5, .02, 3.0, w); m.box(0, 2.0, -1.9, 2.1, .1, .6, dk); wh(-1.1, 1.4, .55, .5); wh(1.1, 1.4, .55, .5); wh(-1.15, -1.3, .6, .6); wh(1.15, -1.3, .6, .6);
+  } else if (kt === 3) { // 로켓 스피더
+    m.sph(0, .8, 0, .7, .5, 2.2, 12, c); m.box(0, .6, 2.6, .4, .3, 1.4, c); m.box(0, .5, 3.2, 2.4, .08, .5, dk); head(1.25, -.2);
+    m.box(0, 2.0, -1.9, .1, 1.4, 1.0, c); m.box(0, 1.3, -2.1, 2.0, .1, .5, dk); m.box(0, .9, -2.4, .5, .5, .5, sv);
+    wh(-1.05, 1.5, .45, .4); wh(1.05, 1.5, .45, .4); wh(-1.2, -1.3, .6, .7); wh(1.2, -1.3, .6, .7);
+  } else if (kt === 4) { // 트럭
+    m.box(0, 1.1, .2, 2.2, .8, 3.6, c); m.box(0, 2.0, .7, 1.9, .9, 1.5, c); m.box(0, 2.1, 1.46, 1.6, .5, .06, gl); m.box(0, 1.6, -1.4, 2.0, .5, 1.3, dk);
+    m.box(0, .8, 2.1, 2.3, .4, .3, sv); m.box(0, 2.5, -1.4, 2.0, .1, .1, dk);
+    for (const sx of [-1, 1]) { m.box(sx * .8, 2.65, .8, .3, .2, .5, C(0xffd23f)); m.box(sx * .7, 1.0, 2.0, .4, .25, .08, hl); }
+    wh(-1.3, 1.4, .75, .8); wh(1.3, 1.4, .75, .8); wh(-1.3, -1.3, .75, .8); wh(1.3, -1.3, .75, .8);
+  } else { // 미니
+    m.sph(0, .95, 0, .95, .7, 1.6, 12, c); m.box(0, .5, 0, 1.4, .3, 2.6, dk); head(1.55, -.1);
+    for (const sx of [-1, 1]) m.sph(sx * .5, .9, 1.5, .2, .2, .2, 6, hl);
+    wh(-.95, 1.0, .42, .45); wh(.95, 1.0, .42, .45); wh(-.95, -1.0, .42, .45); wh(.95, -1.0, .42, .45);
+  }
+  return m.build();
 }
 const sparkM = [], sparkC = [0x4fc3ff, 0xffa21f, 0xff3df2];
 function sparkMesh(l) { if (!sparkM[l]) { const m = new MB(), c = C(sparkC[l]); for (const sx of [-1, 1]) { m.box(sx * 1.5, .25, -2.0, .35, .3, 1.1, c); m.box(sx * 1.7, .5, -2.6, .2, .2, .6, C(0xffffff)); } sparkM[l] = m.build(); } return sparkM[l]; }
@@ -480,7 +518,7 @@ function resetKart() {
 
 /* physics */
 function stepKart(k, dt) {
-  const tr = G.tr, N = tr.N, inp = (k.bot || k.auto) ? botInput(k) : readInput();
+  const tr = G.tr, N = tr.N, inp = (k.bot || k.auto) ? botInput(k) : readInput(), T = KT[k.kt | 0];
   let i = k.idx;
   const lat = (k.x - tr.cx[i]) * tr.nx[i] + (k.z - tr.cz[i]) * tr.nz[i], off = Math.abs(lat) > tr.hw + 1.6;
   let bo = false;
@@ -488,8 +526,8 @@ function stepKart(k, dt) {
   k.boosting = bo;
   const fx = Math.sin(k.a), fz = Math.cos(k.a), slip = Math.abs(k.vx * fz - k.vz * fx);
   if (!bo) k.gauge = Math.min(1, k.gauge + dt * (.045 + (k.drift ? .12 : 0) + (slip > 8 && k.sp > 20 ? .09 : 0)));
-  const cap = MAXSP * (bo ? 1.45 : (off ? .5 : 1)) * (k.kick > 0 ? 1.2 : 1) * (k.flag ? .92 : 1) * (k.it ? 1.1 : 1); if (k.kick > 0) k.sp += 55 * dt;
-  if (inp.thr) k.sp += (bo ? 75 : 26) * dt;
+  const cap = MAXSP * T.sp * (bo ? 1.45 : (off ? .5 : 1)) * (k.kick > 0 ? 1.2 : 1) * (k.flag ? .92 : 1) * (k.it ? 1.1 : 1); if (k.kick > 0) k.sp += 55 * dt;
+  if (inp.thr) k.sp += (bo ? 75 : 26 * T.ac) * dt;
   else if (inp.brk) k.sp -= (k.sp > 0 ? 65 : 22) * dt;
   else k.sp -= Math.sign(k.sp) * Math.min(Math.abs(k.sp), 8 * dt);
   if (bo && !inp.thr) k.sp += 40 * dt;
@@ -500,8 +538,8 @@ function stepKart(k, dt) {
   if (inp.drift && k.sp > 16 && (k.drift || st)) { if (!k.drift) { k.drift = st > 0 ? 1 : -1; k.dtm = 0; } k.dtm += dt; st = clamp(k.drift * .9 + st * .55, -1.4, 1.4); }
   else if (k.drift) { if (k.dtm > .8) { k.gauge = Math.min(1, k.gauge + Math.min(.5, k.dtm * .2)); k.kick = .6; } k.drift = 0; k.dtm = 0; }
   if (k.kick > 0) k.kick -= dt;
-  k.a += st * 2.7 * (k.drift ? 1.2 : 1) * sf * (k.sp < 0 ? -1 : 1) * dt;
-  const gx = Math.sin(k.a), gz = Math.cos(k.a), g = Math.min(1, (k.drift ? 2.1 : 5.5) * dt);
+  k.a += st * 2.7 * T.st * (k.drift ? 1.2 : 1) * sf * (k.sp < 0 ? -1 : 1) * dt;
+  const gx = Math.sin(k.a), gz = Math.cos(k.a), g = Math.min(1, (k.drift ? 2.1 : 5.5 * T.gr) * dt);
   k.vx += (gx * k.sp - k.vx) * g; k.vz += (gz * k.sp - k.vz) * g;
   k.x += k.vx * dt; k.z += k.vz * dt;
   k.idx = locate(k.x, k.z, k.idx);
@@ -518,7 +556,7 @@ function stepKart(k, dt) {
   for (const o of G.karts) {
     if (o === k || o.gone) continue;
     const dx = k.x - o.x, dz = k.z - o.z, d2 = dx * dx + dz * dz;
-    if (d2 < 10.24 && d2 > 1e-4) { const d = Math.sqrt(d2), ov = (3.2 - d) * .5, nx = dx / d, nz = dz / d; k.x += nx * ov; k.z += nz * ov; k.vx += nx * ov * 6; k.vz += nz * ov * 6; k.sp *= .993; }
+    if (d2 < 10.24 && d2 > 1e-4) { const d = Math.sqrt(d2), mo = KT[o.kt | 0].ms || 1, mk = T.ms || 1, ov = (3.2 - d) * .5 * 2 * mo / (mo + mk), nx = dx / d, nz = dz / d; k.x += nx * ov; k.z += nz * ov; k.vx += nx * ov * 6; k.vz += nz * ov * 6; k.sp *= .993; }
   }
   // progress
   let d = k.idx - k.lidx; if (d < -N / 2) d += N; else if (d > N / 2) d -= N;
@@ -541,7 +579,7 @@ function startRace(mapId, list, mode) {
   list.forEach((e, slot) => {
     const row = slot >> 1, side = (slot & 1) ? 1 : -1, idx = (N - 3 - row * 2 + N) % N;
     const x = tr.cx[idx] + tr.nx[idx] * side * 3.4, z = tr.cz[idx] + tr.nz[idx] * side * 3.4;
-    const k = { id: e.id, name: e.name, color: e.color, local: !!e.local, bot: !!e.bot, x, z, a: Math.atan2(tr.tx[idx], tr.tz[idx]), vx: 0, vz: 0, sp: 0, gauge: .3, boosting: false, drift: 0, dtm: 0, kick: 0, vyaw: 0, idx, lidx: idx, tot: idx - N, fin: 0, auto: false, off: (Math.random() - .5) * 10, skill: .84 + Math.random() * .13, tx: x, tz: z, ta: 0, tvx: 0, tvz: 0, last: performance.now(), gone: false };
+    const k = { id: e.id, name: e.name, color: e.color, kt: e.kt | 0, local: !!e.local, bot: !!e.bot, x, z, a: Math.atan2(tr.tx[idx], tr.tz[idx]), vx: 0, vz: 0, sp: 0, gauge: .3, boosting: false, drift: 0, dtm: 0, kick: 0, vyaw: 0, idx, lidx: idx, tot: idx - N, fin: 0, auto: false, off: (Math.random() - .5) * 10, skill: .84 + Math.random() * .13, tx: x, tz: z, ta: 0, tvx: 0, tvz: 0, last: performance.now(), gone: false };
     G.karts.push(k); if (k.local && !k.bot) G.me = k;
   });
   G.state = 'count'; G.t0 = performance.now() + 4000; G.raceT = 0; G.camA = G.me.a; G.hint = performance.now() + 9000; G.wrongT = 0;
@@ -549,8 +587,8 @@ function startRace(mapId, list, mode) {
 }
 function startSolo() {
   const s = G.solo, bots = s.bots, used = new Set([ME.color]), list = [];
-  for (let b = 0; b < bots; b++) { let c; do { c = Math.random() * KC.length | 0; } while (used.has(c) && used.size < KC.length); used.add(c); list.push({ id: 'b' + b, name: BOTN[b % BOTN.length], color: c, local: true, bot: true }); }
-  list.push({ id: 'me', name: ME.name, color: ME.color, local: true });
+  for (let b = 0; b < bots; b++) { let c; do { c = Math.random() * KC.length | 0; } while (used.has(c) && used.size < KC.length); used.add(c); list.push({ id: 'b' + b, name: BOTN[b % BOTN.length], color: c, kt: Math.random() * KT.length | 0, local: true, bot: true }); }
+  list.push({ id: 'me', name: ME.name, color: ME.color, kt: ME.kart | 0, local: true });
   G.gm = s.gm || 'race'; G.laps = G.gm === 'race' ? s.laps : 1e9; startRace(s.map, list, 'solo');
 }
 function onMeFinish() { G.resultOn = true; $('#bAgain').style.display = G.mode === 'solo' ? '' : 'none'; showSec('s-result'); updateResult(); }
@@ -634,14 +672,14 @@ function render(now, dt) {
   for (const k of G.karts) {
     if (k.gone) continue;
     k.vyaw = (k.vyaw || 0) + ((k.drift || 0) * .3 - (k.vyaw || 0)) * Math.min(1, dt * 10);
-    const M = modelY(k.x, 0, k.z, k.a + k.vyaw); ms.push([k, M]); drawMesh(kartMesh(k.color), M);
+    const M = modelY(k.x, 0, k.z, k.a + k.vyaw); ms.push([k, M]); drawMesh(kartMesh(k.color, k.kt), M);
   }
   if (G.flags) for (const f of G.flags) { drawMesh(baseM(f.team), modelY(f.hx, 0, f.hz, 0)); const c = f.carrier; drawMesh(flagM(f.team), c ? modelY(c.x - Math.sin(c.a) * 1.2, 1.9, c.z - Math.cos(c.a) * 1.2, c.a) : modelY(f.x, 0, f.z, now / 900)); }
   if (G.coins) { gl.uniform1f(uMat, 2); for (const c of G.coins) if (c.on) drawMesh(coinM(), modelY(c.x, 1.7 + Math.sin(now / 300 + c.x) * .3, c.z, now / 350)); gl.uniform1f(uMat, 1); }
   const SM = [1, 0, 0, 0, -L[0] / L[1], 0, -L[2] / L[1], 0, 0, 0, 1, 0, 0, .16, 0, 1];
   gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE); gl.depthMask(false);
   gl.enable(gl.STENCIL_TEST); gl.stencilFunc(gl.EQUAL, 0, 255); gl.stencilOp(gl.KEEP, gl.KEEP, gl.INCR);
-  gl.uniform1f(uSh, 1); for (const [k, M] of ms) drawMesh(kartMesh(k.color), mul(SM, M));
+  gl.uniform1f(uSh, 1); for (const [k, M] of ms) drawMesh(kartMesh(k.color, k.kt), mul(SM, M));
   gl.uniform1f(uSh, 0); gl.disable(gl.STENCIL_TEST); gl.depthMask(true); gl.uniform1f(uMat, 2);
   for (const [k, M] of ms) { if (k.boosting) drawMesh(getFlame(), M); const lv = dLevel(k); if (lv && ((now / 70 | 0) & 1)) drawMesh(sparkMesh(lv - 1), M); }
   gl.disable(gl.BLEND);
@@ -747,6 +785,11 @@ function colorPicker() {
   KC.forEach((c, i) => { const s = document.createElement('i'); s.style.background = '#' + hex(c); if (i === ME.color) s.className = 'sel'; s.onclick = () => { ME.color = i; saveME(); colorPicker(); }; el.appendChild(s); });
 }
 $('#name').value = ME.name; colorPicker();
+function kartPicker() {
+  const el = $('#kartTypes'); el.innerHTML = '';
+  KT.forEach((t, i) => { const b = document.createElement('button'); b.className = 'mp' + (ME.kart === i ? ' sel' : ''); b.style.background = '#2a3157'; b.innerHTML = `<b>${t.n}</b><small>${t.d}</small>`; b.onclick = () => { ME.kart = i; saveME(); kartPicker(); }; el.appendChild(b); });
+}
+ME.kart = ME.kart | 0; kartPicker();
 $('#name').onchange = saveME;
 document.querySelectorAll('[data-back]').forEach(b => b.onclick = () => { if (NET.active) leaveRoom(); showSec('s-menu'); });
 
@@ -767,7 +810,10 @@ const errMsg = e => `Firestore 연결 실패: ${e.message}. (보안 규칙에서
 
 /* ---------------------------------------------------------------- NET (lobby + WebRTC mesh) */
 const NET = { pid: rid(), room: null, host: false, peers: {}, players: [], active: false, paused: false, mapId: 0, roomName: '', timers: [], seen: new Set(), polling: false, grace: 0, nextPoll: 0, pollT: null };
-const ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }] };
+const ICE = { iceCandidatePoolSize: 2, iceServers: [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
+  { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' } // 공개 TURN(무료). 안정적으로 쓰려면 본인 TURN 서버로 교체
+] };
 const STALE = 30000;
 const fresh = p => p.id === NET.pid || Date.now() < NET.grace || Date.now() - p.t < STALE;
 
@@ -797,14 +843,14 @@ $('#bQuick').onclick = async () => {
   catch (e) { $('#roomsMsg').textContent = errMsg(e); }
 };
 
-async function putPlayer() { await fs('PATCH', `kartRooms/${NET.room}/players/${NET.pid}`, enc({ name: ME.name, color: ME.color, t: Date.now() })); }
+async function putPlayer() { await fs('PATCH', `kartRooms/${NET.room}/players/${NET.pid}`, enc({ name: ME.name, color: ME.color, kart: ME.kart | 0, t: Date.now() })); }
 async function putRoom(state) { await fs('PATCH', `kartRooms/${NET.room}`, enc({ name: NET.roomName, host: NET.pid, map: NET.mapId, state: state || 'waiting', n: Math.max(1, NET.players.length), t: Date.now() })); }
 async function getPlayers(id) { const r = await fs('GET', `kartRooms/${id}/players`, null, '&pageSize=50'); return ((r && r.documents) || []).map(dec).filter(p => Date.now() - p.t < STALE); }
 
 async function createRoom(mapId) {
   saveME(); if (NET.active) leaveRoom();
   try {
-    NET.room = 'r' + rid(); NET.host = true; NET.mapId = mapId; NET.roomName = `${ME.name}의 방`; NET.players = [{ id: NET.pid, name: ME.name, color: ME.color, t: Date.now() }];
+    NET.room = 'r' + rid(); NET.host = true; NET.mapId = mapId; NET.roomName = `${ME.name}의 방`; NET.players = [{ id: NET.pid, name: ME.name, color: ME.color, kart: ME.kart | 0, t: Date.now() }];
     await putRoom('waiting'); await putPlayer(); startNet();
   } catch (e) { NET.room = null; $('#roomsMsg').textContent = errMsg(e); }
 }
@@ -852,11 +898,11 @@ async function poll() {
     if (!rd && !NET.host) { leaveRoom(); showSec('s-rooms'); refreshRooms(); $('#roomsMsg').textContent = '방장이 방을 닫았어요.'; return; }
     if (rd && !NET.host) { const room = dec(rd); NET.mapId = room.map; NET.roomName = room.name; }
     NET.players = ((pl && pl.documents) || []).map(dec).filter(fresh);
-    if (!NET.players.find(p => p.id === NET.pid)) NET.players.push({ id: NET.pid, name: ME.name, color: ME.color, t: Date.now() });
+    if (!NET.players.find(p => p.id === NET.pid)) NET.players.push({ id: NET.pid, name: ME.name, color: ME.color, kart: ME.kart | 0, t: Date.now() });
     for (const s of sg) {
       if (NET.seen.has(s.id)) continue; NET.seen.add(s.id);
       fs('DELETE', `kartRooms/${NET.room}/signals/${s.id}`).catch(() => { });
-      if (Date.now() - s.t < 60000) handleSig(s);
+      handleSig(s);
     }
     const ids = NET.players.map(p => p.id).filter(i => i !== NET.pid);
     for (const q of ids) {
@@ -884,13 +930,14 @@ function renderRoom() {
   list.forEach(p => {
     const me = p.id === NET.pid, P = NET.peers[p.id], ok = me || (P && P.open);
     const d = document.createElement('div'); d.className = 'item';
-    d.innerHTML = `<span><span class="dot" style="background:#${hex(KC[p.color % KC.length])}"></span>${esc(p.name)}${me ? ' (나)' : ''}${p.id === hostId() ? ' 👑' : ''}</span><span class="tag ${ok ? 'ok' : ''}">${me ? '준비됨' : ok ? 'P2P 연결됨' : '연결 중...'}</span>`;
+    d.innerHTML = `<span><span class="dot" style="background:#${hex(KC[p.color % KC.length])}"></span>${esc(p.name)}${me ? ' (나)' : ''} <span class="tag">${KT[p.kart | 0].n}</span>${p.id === hostId() ? ' 👑' : ''}</span><span class="tag ${ok ? 'ok' : ''}">${me ? '준비됨' : ok ? 'P2P 연결됨' : P && P.st === 'failed' ? '연결 실패 ✗' : '연결 중...' + (P && P.st ? ' (' + P.st + ')' : '')}</span>`;
     el.appendChild(d);
   });
   const conn = Object.values(NET.peers).filter(p => p.open).length;
   const b = $('#bStart'); b.style.display = NET.host ? '' : 'none'; b.disabled = conn < 1;
   b.textContent = conn < 1 ? '다른 플레이어를 기다리는 중 (최소 2명)' : `게임 시작 (${conn + 1}명)`;
   if (!NET.host) $('#roomMsg').textContent = $('#roomMsg').textContent || '방장이 시작하면 자동으로 레이스가 시작돼요.';
+  if (Object.values(NET.peers).some(p => p.st === 'failed')) $('#roomMsg').textContent = '일부 와이파이(학교·회사)는 P2P를 막아요. 한쪽을 휴대폰 핫스팟으로 바꿔보세요. 자동으로 재시도 중...';
 }
 function hostId() { return NET.host ? NET.pid : null; }
 $('#roomGm').onchange = e => { if (!NET.host) return; NET.gm = e.target.value; netSendC(JSON.stringify({ t: 'gm', v: NET.gm })); };
@@ -898,14 +945,14 @@ $('#bStart').onclick = () => {
   if (!NET.host) return;
   const order = [NET.pid, ...Object.values(NET.peers).filter(p => p.open).map(p => p.q).sort()];
   const info = {}; NET.players.forEach(p => info[p.id] = p);
-  const msg = { t: 'go', m: NET.mapId, o: order.map(id => ({ id, n: (info[id] || {}).name || '???', c: (info[id] || {}).color || 0 })), laps: 3, gm: NET.gm || 'race' };
+  const msg = { t: 'go', m: NET.mapId, o: order.map(id => ({ id, n: (info[id] || {}).name || '???', c: (info[id] || {}).color || 0, k: (info[id] || {}).kart | 0 })), laps: 3, gm: NET.gm || 'race' };
   netSendC(JSON.stringify(msg)); NET.paused = true; putRoom('racing').catch(() => { });
   beginMulti(msg);
 };
 function beginMulti(msg) {
   if (G.state !== 'idle') return;
   NET.paused = true; G.gm = msg.gm || 'race'; G.laps = G.gm === 'race' ? (msg.laps || 3) : 1e9;
-  const list = msg.o.map(e => ({ id: e.id, name: e.n, color: e.c % KC.length, local: e.id === NET.pid }));
+  const list = msg.o.map(e => ({ id: e.id, name: e.n, color: e.c % KC.length, kt: e.k | 0, local: e.id === NET.pid }));
   startRace(msg.m, list, 'multi');
 }
 function backToRoom() {
@@ -919,7 +966,7 @@ function gathered(pc) {
   return new Promise(res => {
     if (pc.iceGatheringState === 'complete') return res();
     const f = () => { if (pc.iceGatheringState === 'complete') { pc.removeEventListener('icegatheringstatechange', f); res(); } };
-    pc.addEventListener('icegatheringstatechange', f); setTimeout(res, 4000);
+    pc.addEventListener('icegatheringstatechange', f); setTimeout(res, 7000);
   });
 }
 function newPeer(q, init) {
@@ -933,6 +980,7 @@ function newPeer(q, init) {
   const hook = ch => { ch.onopen = chk; ch.onclose = chk; ch.onmessage = e => onMsg(q, e.data); if (ch.label === 'c') P.c = ch; else P.u = ch; chk(); };
   if (init) { P.as = pc.addTransceiver('audio', { direction: 'sendrecv' }).sender; if (VOICE.track) P.as.replaceTrack(VOICE.track).catch(() => { }); hook(pc.createDataChannel('c')); hook(pc.createDataChannel('u', { ordered: false, maxRetransmits: 0 })); }
   else pc.ondatachannel = e => hook(e.channel);
+  pc.oniceconnectionstatechange = () => { P.st = pc.iceConnectionState; if (P.st === 'failed') P.t = 0; renderRoom(); };
   pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed' || pc.connectionState === 'closed') chk(); };
   return P;
 }
