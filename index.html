@@ -629,6 +629,28 @@ const netIce=()=>NET_LAN_ONLY?[]:[
   {urls:['turn:freestun.net:3478','turn:freestun.net:3478?transport=tcp','turns:freestun.net:5349'],username:'free',credential:'free'},
   {urls:['turn:global.relay.metered.ca:80','turn:global.relay.metered.ca:443','turns:global.relay.metered.ca:443?transport=tcp'],username:'openrelayproject',credential:'openrelayproject'}
 ];
+/* 직접 만든 TURN 서버가 있으면 여기에 넣으세요 (Metered / Cloudflare / Twilio 무료 계정) → 가장 확실한 해결책
+   예) const NET_TURN_CUSTOM=[{urls:['turn:xxx.metered.live:80','turn:xxx.metered.live:443','turns:xxx.metered.live:443?transport=tcp'],username:'...',credential:'...'}]; */
+const NET_TURN_CUSTOM=[];
+/* 연결 만들기: 후보(직접/공인/중계)가 몇 개 모였는지 세어서, 실패했을 때 원인을 화면에 보여준다 */
+let netDiagLast='';
+function netMkPC(servers){
+  const pc=new RTCPeerConnection(servers?{iceServers:servers}:{iceServers:NET_TURN_CUSTOM.concat(netIce()),iceCandidatePoolSize:4});
+  pc._ct={host:0,srflx:0,relay:0};
+  pc.addEventListener('icecandidate',e=>{
+    if(!e.candidate)return;
+    const m=/ typ (\w+)/.exec(e.candidate.candidate);
+    if(m&&pc._ct[m[1]]!=null)pc._ct[m[1]]++;
+  });
+  pc.addEventListener('icecandidateerror',e=>{try{console.warn('ICE 서버 오류',e.url,e.errorCode,e.errorText);}catch(x){}});
+  return pc;
+}
+function netDiag(){
+  const c=netPC&&netPC._ct;if(!c)return netDiagLast;
+  netDiagLast=' [내 연결 후보 직접:'+c.host+' 공인:'+c.srflx+' 중계:'+c.relay+(c.relay===0?' → 중계 서버에 접속 못함':'')+']';
+  console.warn('연결 실패 진단',netDiagLast);
+  return netDiagLast;
+}
 function netLoad(src){return new Promise((res,rej)=>{const e=document.createElement('script');e.src=src;e.onload=res;e.onerror=()=>rej(new Error('접속하지 못했어요. 인터넷 연결을 확인해 주세요'));document.head.appendChild(e);});}
 async function netDB(){
   if(fbDB)return fbDB;
@@ -769,7 +791,8 @@ function netQueueStop(){
   if(q.id&&fbDB)fbDB.remove(q.id);
 }
 function netQueueRestart(msg){
-  netQueueStop();netCleanup();netQStatus(msg||'');
+  const dg=netDiag();
+  netQueueStop();netCleanup();netQStatus((msg||'')+dg);
   setTimeout(()=>{if(phase==='lobby'&&!netQ)netQueueStart();},1200);
 }
 function netQueueFail(e){
@@ -907,7 +930,7 @@ async function netHostConnect(q,db,me,say){
   try{
     say('상대를 찾았어요! 준비 중…');
     netCleanup();netRole='host';netMe=0;
-    const pc=netPC=new RTCPeerConnection({iceServers:netIce()});
+    const pc=netPC=netMkPC();
     netBindPC(pc,()=>netQueueRestart('연결이 안 됐어요. 다시 찾는 중…'));
     netBindDC(pc.createDataChannel('g'));
     pc.onicecandidate=e=>{if(e.candidate)db.push(me,'hc',JSON.stringify(e.candidate)).catch(()=>{});};
@@ -922,7 +945,7 @@ function netGuestJoin(q,db,docId,say){
   const answer=async offer=>{
     try{
       netCleanup();netRole='guest';netMe=1;
-      const pc=netPC=new RTCPeerConnection({iceServers:netIce()});
+      const pc=netPC=netMkPC();
       netBindPC(pc,()=>netQueueRestart('연결이 안 됐어요. 다시 찾는 중…'));
       pc.ondatachannel=e=>netBindDC(e.channel);
       pc.onicecandidate=e=>{if(e.candidate)db.push(docId,'gc',JSON.stringify(e.candidate)).catch(()=>{});};
@@ -1011,7 +1034,7 @@ function openLobby(){
   netCss();phase='lobby';sfx('ok');netBad.clear();
   if(netLobby)netLobby.remove();
   netLobby=document.createElement('div');netLobby.id='net';
-  netLobby.innerHTML='<div class="pn"><h2>대전 상대 고르기</h2><div class="me"></div><div class="fl"><input id="sq" maxlength="8" placeholder="🔍 이름 검색" autocomplete="off"><select id="sc"><option value="">🌍 전 세계</option></select></div><div class="ls"><div class="em">찾는 중…</div></div><div class="sp"></div><div class="st"></div><button class="g" id="rt" style="display:none">다시 시도</button><button class="g" id="nb">나가기</button></div>';
+  netLobby.innerHTML='<div class="pn"><h2>대전 상대 고르기</h2><div class="me"></div><div class="fl"><input id="sq" maxlength="8" placeholder="🔍 이름 검색" autocomplete="off"><select id="sc"><option value="">🌍 전 세계</option></select></div><div class="ls"><div class="em">찾는 중…</div></div><div class="sp"></div><div class="st"></div><button class="g" id="rt" style="display:none">다시 시도</button><button class="g" id="dc">📡 직접 연결 (같은 Wi-Fi·핫스팟 · 서버 없이)</button><button class="g" id="nb">나가기</button></div>';
   netMeLabel();
   netLobby.querySelector('#sq').oninput=()=>netRenderList();
   netLobby.querySelector('#sc').onchange=()=>netRenderList();
@@ -1019,7 +1042,94 @@ function openLobby(){
   document.body.appendChild(netLobby);
   netLobby.querySelector('#nb').onclick=()=>netLeave(null,true);
   netLobby.querySelector('#rt').onclick=()=>{if(!netQ)netQueueStart();};
+  netLobby.querySelector('#dc').onclick=netDirectMenu;
   netQueueStart();
+}
+/* ===== 직접 연결: 인터넷 서버(Firebase)도 중계 서버도 쓰지 않고, 코드를 주고받아 바로 연결 =====
+   같은 Wi-Fi / 한쪽 휴대폰 핫스팟에 둘 다 붙어 있으면 인터넷이 없어도 된다.
+   (브라우저는 블루투스로 기기끼리 직접 통신할 수 없어서, 같은 Wi-Fi·핫스팟을 이용한다) */
+async function netEnc(o){
+  const s=JSON.stringify(o);
+  try{if(window.CompressionStream){
+    const cs=new CompressionStream('deflate-raw'),w=cs.writable.getWriter();w.write(new TextEncoder().encode(s));w.close();
+    const b=new Uint8Array(await new Response(cs.readable).arrayBuffer());let t='';for(let i=0;i<b.length;i++)t+=String.fromCharCode(b[i]);return 'Z'+btoa(t);
+  }}catch(e){}
+  return 'P'+btoa(unescape(encodeURIComponent(s)));
+}
+async function netDec(t){
+  t=String(t||'').replace(/\s+/g,'');if(t.length<10)throw new Error('code');
+  const raw=atob(t.slice(1));
+  if(t[0]==='Z'){
+    const b=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)b[i]=raw.charCodeAt(i);
+    const ds=new DecompressionStream('deflate-raw'),w=ds.writable.getWriter();w.write(b);w.close();
+    return JSON.parse(await new Response(ds.readable).text());
+  }
+  return JSON.parse(decodeURIComponent(escape(raw)));
+}
+function netDirectUI(title,body){
+  const pn=netLobby&&netLobby.querySelector('.pn');if(!pn)return null;
+  pn.innerHTML='<h2>'+title+'</h2>'+body;return pn;
+}
+const NET_TA='width:100%;box-sizing:border-box;height:74px;font-size:11px;font-family:monospace;background:#000;color:#9fd2ff;border:2px solid #5ab4ff;border-radius:6px;padding:6px;margin:4px 0;resize:none;user-select:text;-webkit-user-select:text';
+function netDirectBack(){
+  netCleanup();netDiagLast='';
+  openLobby();
+}
+function netDirectMenu(){
+  netQueueStop();netCleanup();
+  const pn=netDirectUI('직접 연결','<p>같은 Wi-Fi 이거나, 한 명이 휴대폰 핫스팟을 켜고 다른 사람이 거기에 접속한 상태에서 쓰세요.<br>서버 없이 코드를 서로 주고받아 연결합니다.</p><button id="dh">방 만들기 (호스트)</button><button id="dg">참가하기 (게스트)</button><br><button class="g" id="db">뒤로</button>');
+  if(!pn)return;
+  pn.querySelector('#db').onclick=netDirectBack;
+  pn.querySelector('#dh').onclick=netDirectHost;
+  pn.querySelector('#dg').onclick=netDirectGuest;
+}
+async function netDirectHost(){
+  const pn=netDirectUI('방 만들기','<p>코드를 만드는 중…</p>');if(!pn)return;
+  try{
+    netCleanup();netRole='host';netMe=0;
+    const pc=netPC=netMkPC([]);
+    netBindPC(pc,()=>{netQStatus('연결이 안 됐어요. 같은 Wi-Fi 인지 확인해 주세요');});
+    netBindDC(pc.createDataChannel('g'));
+    await pc.setLocalDescription(await pc.createOffer());await netGather(pc);
+    const code=await netEnc({d:pc.localDescription.sdp});
+    if(netPC!==pc||!netLobby)return;
+    netDirectUI('방 만들기','<p>① 아래 코드를 상대에게 보내 주세요 (카톡 등)</p><textarea id="c1" readonly style="'+NET_TA+'"></textarea><button class="g" id="cp">코드 복사</button><p>② 상대가 보내준 답 코드를 붙여넣고 [연결]</p><textarea id="c2" placeholder="상대의 답 코드" style="'+NET_TA+'"></textarea><div class="st"></div><button id="go">연결</button><button class="g" id="db">뒤로</button>');
+    const q=s=>netLobby.querySelector(s);
+    q('#c1').value=code;
+    q('#cp').onclick=()=>{q('#c1').select();try{navigator.clipboard.writeText(code);}catch(e){try{document.execCommand('copy');}catch(x){}}netQStatus('복사했어요');};
+    q('#db').onclick=netDirectBack;
+    q('#go').onclick=async()=>{
+      try{
+        const a=await netDec(q('#c2').value);
+        await pc.setRemoteDescription({type:'answer',sdp:a.d});
+        netQStatus('연결하는 중…');
+        setTimeout(()=>{if(netPC===pc&&!netOpen)netQStatus('연결이 안 됐어요. 같은 Wi-Fi 인지 확인하고 처음부터 다시 해 주세요');},15000);
+      }catch(e){netQStatus('코드가 올바르지 않아요');}
+    };
+  }catch(e){console.error(e);netQStatus('코드를 만들지 못했어요');}
+}
+async function netDirectGuest(){
+  netDirectUI('참가하기','<p>호스트가 보낸 코드를 붙여넣고 [다음]</p><textarea id="c1" placeholder="호스트의 코드" style="'+NET_TA+'"></textarea><div class="st"></div><button id="go">다음</button><button class="g" id="db">뒤로</button>');
+  const q=s=>netLobby.querySelector(s);
+  q('#db').onclick=netDirectBack;
+  q('#go').onclick=async()=>{
+    try{
+      const o=await netDec(q('#c1').value);
+      netQStatus('답 코드를 만드는 중…');
+      netCleanup();netRole='guest';netMe=1;
+      const pc=netPC=netMkPC([]);
+      netBindPC(pc,()=>{netQStatus('연결이 안 됐어요. 같은 Wi-Fi 인지 확인해 주세요');});
+      pc.ondatachannel=e=>netBindDC(e.channel);
+      await pc.setRemoteDescription({type:'offer',sdp:o.d});
+      await pc.setLocalDescription(await pc.createAnswer());await netGather(pc);
+      const code=await netEnc({d:pc.localDescription.sdp});
+      if(netPC!==pc||!netLobby)return;
+      netDirectUI('참가하기','<p>아래 답 코드를 호스트에게 보내 주세요.<br>호스트가 [연결]을 누르면 바로 시작돼요.</p><textarea id="c1" readonly style="'+NET_TA+'"></textarea><button class="g" id="cp">코드 복사</button><div class="st"></div><button class="g" id="db">뒤로</button>');
+      q('#c1').value=code;
+      q('#cp').onclick=()=>{q('#c1').select();try{navigator.clipboard.writeText(code);}catch(e){try{document.execCommand('copy');}catch(x){}}netQStatus('복사했어요');};
+      q('#db').onclick=netDirectBack;
+    }catch(e){console.error(e);netQStatus('코드가 올바르지 않아요');}
+  };
 }
 addEventListener('beforeunload',()=>{if(netQ&&netQ.id&&fbDB)fbDB.remove(netQ.id);});
 addEventListener('pagehide',()=>{if(netQ&&netQ.id&&fbDB)fbDB.remove(netQ.id);});
