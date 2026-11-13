@@ -66,6 +66,8 @@ select{width:100%;background:#0b0e1e;border:1px solid #333b66;color:#fff;border-
     <h2>혼자 플레이</h2>
     <label>맵 선택</label>
     <div class="maps" id="soloMaps"></div>
+    <label>게임 모드</label>
+    <select id="gmode"><option value="race">🏁 레이스</option><option value="ctf">🚩 깃발전 (레드 vs 블루 팀전)</option><option value="coin">🪙 코인 러시</option><option value="tag">💣 술래잡기</option></select>
     <label>AI 상대 수</label>
     <select id="botN"><option value="0">0 (타임어택)</option><option value="3">3</option><option value="5" selected>5</option><option value="7">7</option><option value="9">9</option></select>
     <label>바퀴 수</label>
@@ -91,6 +93,8 @@ select{width:100%;background:#0b0e1e;border:1px solid #333b66;color:#fff;border-
     <h2 id="roomTitle">대기실</h2>
     <label>맵 <span id="mapHint" style="color:#666"></span></label>
     <div class="maps" id="lobbyMaps"></div>
+    <label>게임 모드 <span id="gmHint" style="color:#666"></span></label>
+    <select id="roomGm"><option value="race">🏁 레이스</option><option value="ctf">🚩 깃발전 (팀전)</option><option value="coin">🪙 코인 러시</option><option value="tag">💣 술래잡기</option></select>
     <label>참가자 (2~10명)</label>
     <div class="list" id="playerList"></div>
     <div class="row"><button class="btn" id="bStart" disabled>게임 시작</button><button class="btn sec" id="bLeave">나가기</button></div>
@@ -464,7 +468,8 @@ function readInput() {
 }
 function botInput(k) {
   const tr = G.tr, N = tr.N, j = (k.idx + 7 + ((Math.max(0, k.sp) / 5) | 0)) % N;
-  const tx = tr.cx[j] + tr.nx[j] * k.off, tz = tr.cz[j] + tr.nz[j] * k.off;
+  let tx = tr.cx[j] + tr.nx[j] * k.off, tz = tr.cz[j] + tr.nz[j] * k.off;
+  if (G.gm === 'tag' && k.it) { let b = 1e9; for (const o of G.karts) if (o !== k && !o.gone) { const q = Math.hypot(o.x - k.x, o.z - k.z); if (q < b) { b = q; tx = o.x; tz = o.z; } } }
   const d = wrap(Math.atan2(tx - k.x, tz - k.z) - k.a), ad = Math.abs(d);
   return { thr: ad < .8 && k.sp < MAXSP * (k.auto ? .8 : k.skill), brk: ad > 1 && k.sp > 22, steer: clamp(d * 3, -1, 1), boost: k.gauge > .95 && ad < .12 };
 }
@@ -483,7 +488,7 @@ function stepKart(k, dt) {
   k.boosting = bo;
   const fx = Math.sin(k.a), fz = Math.cos(k.a), slip = Math.abs(k.vx * fz - k.vz * fx);
   if (!bo) k.gauge = Math.min(1, k.gauge + dt * (.045 + (k.drift ? .12 : 0) + (slip > 8 && k.sp > 20 ? .09 : 0)));
-  const cap = MAXSP * (bo ? 1.45 : (off ? .5 : 1)) * (k.kick > 0 ? 1.2 : 1); if (k.kick > 0) k.sp += 55 * dt;
+  const cap = MAXSP * (bo ? 1.45 : (off ? .5 : 1)) * (k.kick > 0 ? 1.2 : 1) * (k.flag ? .92 : 1) * (k.it ? 1.1 : 1); if (k.kick > 0) k.sp += 55 * dt;
   if (inp.thr) k.sp += (bo ? 75 : 26) * dt;
   else if (inp.brk) k.sp -= (k.sp > 0 ? 65 : 22) * dt;
   else k.sp -= Math.sign(k.sp) * Math.min(Math.abs(k.sp), 8 * dt);
@@ -526,7 +531,7 @@ function stepRemote(k, dt, now) {
   const g = Math.min(1, dt * 14); k.x += (ex - k.x) * g; k.z += (ez - k.z) * g; k.a += wrap(k.ta - k.a) * g;
   if (now - k.last > 5000 && G.state === 'race') k.gone = true;
 }
-const score = k => k.fin ? 1e9 - k.fin : k.tot;
+const score = k => G.gm && G.gm !== 'race' ? (k.pts || 0) : (k.fin ? 1e9 - k.fin : k.tot);
 function ranked() { return G.karts.filter(k => !k.gone).sort((a, b) => score(b) - score(a)); }
 
 /* ---------------------------------------------------------------- race flow */
@@ -540,13 +545,13 @@ function startRace(mapId, list, mode) {
     G.karts.push(k); if (k.local && !k.bot) G.me = k;
   });
   G.state = 'count'; G.t0 = performance.now() + 4000; G.raceT = 0; G.camA = G.me.a; G.hint = performance.now() + 9000; G.wrongT = 0;
-  crowdOn(true); hideAll();
+  modeInit(); crowdOn(true); hideAll();
 }
 function startSolo() {
   const s = G.solo, bots = s.bots, used = new Set([ME.color]), list = [];
   for (let b = 0; b < bots; b++) { let c; do { c = Math.random() * KC.length | 0; } while (used.has(c) && used.size < KC.length); used.add(c); list.push({ id: 'b' + b, name: BOTN[b % BOTN.length], color: c, local: true, bot: true }); }
   list.push({ id: 'me', name: ME.name, color: ME.color, local: true });
-  G.laps = s.laps; startRace(s.map, list, 'solo');
+  G.gm = s.gm || 'race'; G.laps = G.gm === 'race' ? s.laps : 1e9; startRace(s.map, list, 'solo');
 }
 function onMeFinish() { G.resultOn = true; $('#bAgain').style.display = G.mode === 'solo' ? '' : 'none'; showSec('s-result'); updateResult(); }
 function fmt(t) { const m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2); }
@@ -555,14 +560,14 @@ function updateResult() {
   const el = $('#resList'); el.innerHTML = '';
   ranked().forEach((k, i) => {
     const d = document.createElement('div'); d.className = 'item';
-    d.innerHTML = `<span><span class="dot" style="background:#${hex(KC[k.color])}"></span>${i + 1}. ${esc(k.name)}${k === G.me ? ' (나)' : ''}</span><span class="tag ${k.fin ? 'ok' : ''}">${k.fin ? fmt(k.fin) : '주행 중'}</span>`;
+    d.innerHTML = `<span><span class="dot" style="background:#${hex(KC[k.color])}"></span>${i + 1}. ${esc(k.name)}${k === G.me ? ' (나)' : ''}</span><span class="tag ${k.fin ? 'ok' : ''}">${G.gm !== 'race' ? Math.floor(k.pts || 0) + '점' : k.fin ? fmt(k.fin) : '주행 중'}</span>`;
     el.appendChild(d);
   });
 }
 setInterval(updateResult, 400);
 function exitRace() {
   if (G.state === 'idle') return;
-  crowdOn(false); G.state = 'idle'; G.resultOn = false; G.karts = []; G.me = null;
+  crowdOn(false); G.flags = G.coins = null; G.state = 'idle'; G.resultOn = false; G.karts = []; G.me = null;
   loadMap(G.map);
   if (G.mode === 'multi' && NET.active) backToRoom(); else showSec('s-menu');
 }
@@ -591,12 +596,14 @@ function update(dt, now) {
   if (G.state === 'race') {
     G.raceT = (now - G.t0) / 1000; crowdUpdate(now);
     for (const k of G.karts) { if (k.gone) continue; if (k.local) stepKart(k, dt); else stepRemote(k, dt, now); }
+    modeStep(dt);
+    if (G.mode === 'multi' && NET.host && G.gm !== 'race' && now - (G.lastMS || 0) > 150) { G.lastMS = now; netSendU(JSON.stringify(snap())); }
     if (G.mode === 'multi' && G.me && now - G.lastSend > 50) {
       G.lastSend = now; const m = G.me;
       netSendU(JSON.stringify({ t: 's', x: r2(m.x), z: r2(m.z), a: r2(m.a), vx: r2(m.vx), vz: r2(m.vz), b: m.boosting ? 1 : 0, d: dLevel(m), tt: Math.round(m.tot), f: m.fin }));
     }
     const m = G.me;
-    if (m) { const tr = G.tr, i = m.idx; G.wrongT = (m.vx * tr.tx[i] + m.vz * tr.tz[i] < -5) ? G.wrongT + dt : 0; }
+    if (m) { const tr = G.tr, i = m.idx; G.wrongT = (G.gm === 'race' && m.vx * tr.tx[i] + m.vz * tr.tz[i] < -5) ? G.wrongT + dt : 0; }
   } else if (G.state === 'count') {
     for (const k of G.karts) if (!k.local) stepRemote(k, dt, now);
   }
@@ -629,6 +636,8 @@ function render(now, dt) {
     k.vyaw = (k.vyaw || 0) + ((k.drift || 0) * .3 - (k.vyaw || 0)) * Math.min(1, dt * 10);
     const M = modelY(k.x, 0, k.z, k.a + k.vyaw); ms.push([k, M]); drawMesh(kartMesh(k.color), M);
   }
+  if (G.flags) for (const f of G.flags) { drawMesh(baseM(f.team), modelY(f.hx, 0, f.hz, 0)); const c = f.carrier; drawMesh(flagM(f.team), c ? modelY(c.x - Math.sin(c.a) * 1.2, 1.9, c.z - Math.cos(c.a) * 1.2, c.a) : modelY(f.x, 0, f.z, now / 900)); }
+  if (G.coins) { gl.uniform1f(uMat, 2); for (const c of G.coins) if (c.on) drawMesh(coinM(), modelY(c.x, 1.7 + Math.sin(now / 300 + c.x) * .3, c.z, now / 350)); gl.uniform1f(uMat, 1); }
   const SM = [1, 0, 0, 0, -L[0] / L[1], 0, -L[2] / L[1], 0, 0, 0, 1, 0, 0, .16, 0, 1];
   gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE); gl.depthMask(false);
   gl.enable(gl.STENCIL_TEST); gl.stencilFunc(gl.EQUAL, 0, 255); gl.stencilOp(gl.KEEP, gl.KEEP, gl.INCR);
@@ -661,7 +670,7 @@ function drawHud(now) {
     if (k === me || k.gone) continue; const p = proj(k.x, 3.6, k.z); if (!p) continue;
     const d = Math.hypot(k.x - me.x, k.z - me.z); if (d > 160) continue;
     ctx.fillStyle = 'rgba(0,0,0,.55)'; const tw = ctx.measureText(k.name).width + 12; ctx.fillRect(p[0] - tw / 2, p[1] - 14, tw, 18);
-    ctx.fillStyle = '#' + hex(KC[k.color]); ctx.fillText(k.name, p[0], p[1]);
+    ctx.fillStyle = '#' + hex(KC[k.color]); ctx.fillText((k.it ? '💣 ' : k.flag ? '🚩 ' : '') + k.name, p[0], p[1]);
   }
   // rank / lap
   const rk = ranked(), pos = rk.indexOf(me) + 1, lap = clamp(Math.floor(Math.max(0, me.tot) / N) + 1, 1, G.laps);
@@ -669,7 +678,7 @@ function drawHud(now) {
   ctx.font = 'italic 900 64px sans-serif'; const ps = pos + '', pw = ctx.measureText(ps).width;
   ctx.strokeText(ps, 22, 76); ctx.fillText(ps, 22, 76);
   ctx.font = 'italic 800 24px sans-serif'; ctx.strokeText('/ ' + rk.length, 30 + pw, 76); ctx.fillText('/ ' + rk.length, 30 + pw, 76);
-  ctx.font = '800 22px sans-serif'; const lt = `LAP ${lap}/${G.laps}`; ctx.strokeText(lt, 22, 108); ctx.fillText(lt, 22, 108);
+  ctx.font = '800 22px sans-serif'; const lt = G.gm === 'race' ? `LAP ${lap}/${G.laps}` : GM[G.gm]; ctx.strokeText(lt, 22, 108); ctx.fillText(lt, 22, 108);
   const tt = fmt(Math.max(0, G.raceT)); ctx.font = '700 18px sans-serif'; ctx.strokeText(tt, 22, 134); ctx.fillText(tt, 22, 134);
   // speed
   ctx.textAlign = 'right'; ctx.font = 'italic 900 44px sans-serif'; const sp = Math.round(Math.abs(me.sp) * 3.6) + '';
@@ -689,6 +698,14 @@ function drawHud(now) {
   for (let i = 0; i <= N; i += 3) { const j = i % N; if (i === 0) ctx.moveTo(mx(tr.cx[j]), my(tr.cz[j])); else ctx.lineTo(mx(tr.cx[j]), my(tr.cz[j])); }
   ctx.closePath(); ctx.stroke();
   for (const k of G.karts) { if (k.gone) continue; ctx.fillStyle = '#' + hex(KC[k.color]); ctx.beginPath(); ctx.arc(mx(k.x), my(k.z), k === me ? 5 : 3.5, 0, 7); ctx.fill(); if (k === me) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); } }
+  if (G.flags) for (const f of G.flags) { ctx.fillStyle = '#' + hex(KC[f.team]); ctx.fillRect(mx(f.x) - 4, my(f.z) - 4, 8, 8); }
+  if (G.coins) { ctx.fillStyle = '#ffd23f'; for (const c of G.coins) if (c.on) ctx.fillRect(mx(c.x) - 1.5, my(c.z) - 1.5, 3, 3); }
+  if (G.gm !== 'race') {
+    const t = fmt(Math.max(0, G.dur - Math.max(0, G.raceT))).slice(0, -3); ctx.textAlign = 'center'; ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.fillStyle = '#fff'; ctx.font = '900 26px sans-serif';
+    const pt = G.gm === 'ctf' ? `🔴 ${G.ts[0]} : ${G.ts[1]} 🔵   ⏱ ${t}` : G.gm === 'coin' ? `🪙 ${me.pts}   ⏱ ${t}` : (me.it ? `💣 당신이 술래! 다른 카트를 박으세요   ⏱ ${t}` : `⏱ ${t}   생존 ${Math.floor(me.pts)}점`);
+    ctx.strokeText(pt, W / 2, 62); ctx.fillText(pt, W / 2, 62);
+    if (me.flag) { ctx.font = '800 20px sans-serif'; ctx.fillStyle = '#ffd23f'; const m2 = '🚩 깃발 운반 중! 우리 기지로 달려요'; ctx.strokeText(m2, W / 2, 94); ctx.fillText(m2, W / 2, 94); }
+  }
   // countdown / messages
   ctx.textAlign = 'center'; ctx.lineWidth = 8;
   if (G.state === 'count') {
@@ -735,7 +752,7 @@ document.querySelectorAll('[data-back]').forEach(b => b.onclick = () => { if (NE
 
 G.solo = { map: 0, bots: 5, laps: 3 };
 $('#bSolo').onclick = () => { saveME(); mapPicker($('#soloMaps'), () => G.solo.map, v => { G.solo.map = v; loadMap(v); }); showSec('s-solo'); };
-$('#bSoloGo').onclick = () => { G.solo.bots = +$('#botN').value; G.solo.laps = +$('#lapN').value; startSolo(); };
+$('#bSoloGo').onclick = () => { G.solo.gm = $('#gmode').value; G.solo.bots = Math.max(+$('#botN').value, G.solo.gm === 'race' ? 0 : 3); G.solo.laps = +$('#lapN').value; startSolo(); };
 
 /* ---------------------------------------------------------------- Firestore REST */
 async function fs(method, path, body, qs = '') {
@@ -860,6 +877,7 @@ function renderRoom() {
   $('#roomTitle').textContent = '대기실 · ' + NET.roomName;
   mapPicker($('#lobbyMaps'), () => NET.mapId, v => { if (!NET.host) return; NET.mapId = v; loadMap(v); putRoom('waiting').catch(() => { }); netSendC(JSON.stringify({ t: 'map', m: v })); });
   $('#mapHint').textContent = NET.host ? '(방장만 변경 가능)' : '(방장이 선택)';
+  $('#roomGm').value = NET.gm || 'race'; $('#roomGm').disabled = !NET.host; $('#gmHint').textContent = NET.host ? '(방장만 변경 가능)' : '(방장이 선택)';
   loadMap(NET.mapId);
   const el = $('#playerList'); el.innerHTML = '';
   const list = NET.players.slice().sort((a, b) => a.id < b.id ? -1 : 1);
@@ -875,17 +893,18 @@ function renderRoom() {
   if (!NET.host) $('#roomMsg').textContent = $('#roomMsg').textContent || '방장이 시작하면 자동으로 레이스가 시작돼요.';
 }
 function hostId() { return NET.host ? NET.pid : null; }
+$('#roomGm').onchange = e => { if (!NET.host) return; NET.gm = e.target.value; netSendC(JSON.stringify({ t: 'gm', v: NET.gm })); };
 $('#bStart').onclick = () => {
   if (!NET.host) return;
   const order = [NET.pid, ...Object.values(NET.peers).filter(p => p.open).map(p => p.q).sort()];
   const info = {}; NET.players.forEach(p => info[p.id] = p);
-  const msg = { t: 'go', m: NET.mapId, o: order.map(id => ({ id, n: (info[id] || {}).name || '???', c: (info[id] || {}).color || 0 })), laps: 3 };
+  const msg = { t: 'go', m: NET.mapId, o: order.map(id => ({ id, n: (info[id] || {}).name || '???', c: (info[id] || {}).color || 0 })), laps: 3, gm: NET.gm || 'race' };
   netSendC(JSON.stringify(msg)); NET.paused = true; putRoom('racing').catch(() => { });
   beginMulti(msg);
 };
 function beginMulti(msg) {
   if (G.state !== 'idle') return;
-  NET.paused = true; G.laps = msg.laps || 3;
+  NET.paused = true; G.gm = msg.gm || 'race'; G.laps = G.gm === 'race' ? (msg.laps || 3) : 1e9;
   const list = msg.o.map(e => ({ id: e.id, name: e.n, color: e.c % KC.length, local: e.id === NET.pid }));
   startRace(msg.m, list, 'multi');
 }
@@ -945,7 +964,65 @@ function onMsg(q, data) {
     k.tx = m.x; k.tz = m.z; k.ta = m.a; k.tvx = m.vx; k.tvz = m.vz; k.boosting = !!m.b; k.dl = m.d || 0; k.tot = m.tt; if (m.f) k.fin = m.f; k.last = performance.now(); k.gone = false;
     if (G.state !== 'idle' && k.fin && G.resultOn === undefined) { /* noop */ }
   } else if (m.t === 'go') { beginMulti(m); }
+  else if (m.t === 'gm') { NET.gm = m.v; if (G.state === 'idle') renderRoom(); }
+  else if (m.t === 'ms') applySnap(m);
+  else if (m.t === 'ev') toast(m.x);
+  else if (m.t === 'me') { if (G.state !== 'idle' && !G.modeDone) { G.modeDone = true; if (G.me) { G.me.auto = true; onMeFinish(); } } }
   else if (m.t === 'map') { NET.mapId = m.m; loadMap(m.m); if (G.state === 'idle') renderRoom(); }
+}
+
+/* ---------------------------------------------------------------- 게임 모드: 깃발전 / 코인 러시 / 술래잡기 */
+const GM = { race: '레이스', ctf: '깃발전', coin: '코인 러시', tag: '술래잡기' }, GMT = { ctf: 180, coin: 120, tag: 90 }, mC = {};
+function mk(key, f) { return mC[key] || (mC[key] = f(new MB()).build()); }
+const flagM = t => mk('f' + t, m => { const c = C(KC[t]); m.box(0, 3.2, 0, .25, 6.4, .25, C(0xeeeeee)); m.box(0, 5.4, 1.1, .12, 1.8, 2.2, c); m.box(0, 5.4, 1.1, .14, .5, 2.3, C(0xffffff)); m.sph(0, 6.5, 0, .3, .3, .3, 6, C(0xffd23f)); return m; });
+const baseM = t => mk('b' + t, m => { m.cyl(0, .2, 0, 7, .12, 24, C(KC[t]), 1); m.cyl(0, .27, 0, 5, .1, 24, C(0xffffff), 1); return m; });
+const coinM = () => mk('c', m => { m.cyl(0, 0, 0, 1.1, .25, 12, C(0xffd23f), 0); m.cyl(0, 0, 0, .7, .3, 10, C(0xfff1a0), 0); return m; });
+function newCoin(c) { const tr = G.tr, i = Math.random() * tr.N | 0, o = (Math.random() - .5) * tr.hw * 1.5; c.x = tr.cx[i] + tr.nx[i] * o; c.z = tr.cz[i] + tr.nz[i] * o; c.on = true; c.t = 0; return c; }
+function evt(t) { toast(t); if (G.mode === 'multi' && NET.host) netSendC(JSON.stringify({ t: 'ev', x: t })); }
+const snap = () => ({ t: 'ms', ts: G.ts, it: G.karts.findIndex(k => k.it), p: G.karts.map(k => Math.round((k.pts || 0) * 10) / 10), f: (G.flags || []).map(f => f.carrier ? f.carrier.id : ''), c: (G.coins || []).map(c => [Math.round(c.x), Math.round(c.z), c.on ? 1 : 0]) });
+function applySnap(m) {
+  if (G.state === 'idle' || G.gm === 'race') return;
+  G.ts = m.ts; m.p.forEach((v, i) => { const k = G.karts[i]; if (k) { k.pts = v; k.it = i === m.it; k.flag = null; } });
+  if (G.flags) m.f.forEach((id, i) => { const f = G.flags[i], c = id ? G.karts.find(k => k.id === id) : null; f.carrier = c || null; if (c) c.flag = f; });
+  if (G.coins) m.c.forEach((a, i) => { const c = G.coins[i]; if (c) { c.x = a[0]; c.z = a[1]; c.on = !!a[2]; } });
+}
+function modeInit() {
+  G.flags = G.coins = null; G.modeDone = false; G.ts = [0, 0]; G.dur = GMT[G.gm] || 0; G.tagCD = 0;
+  if (G.gm === 'race') return;
+  const tr = G.tr, N = tr.N;
+  G.karts.forEach((k, i) => { k.pts = 0; k.team = i & 1; k.flag = null; k.it = false; if (G.gm === 'ctf') k.color = k.team; });
+  if (G.gm === 'ctf') G.flags = [0, 1].map(t => { const i = t ? N >> 1 : 0; return { team: t, hx: tr.cx[i], hz: tr.cz[i], x: tr.cx[i], z: tr.cz[i], carrier: null }; });
+  if (G.gm === 'coin') { G.coins = []; for (let n = 0; n < 40; n++) G.coins.push(newCoin({})); }
+  if (G.gm === 'tag') G.karts[Math.random() * G.karts.length | 0].it = true;
+}
+function endMode() {
+  G.modeDone = true;
+  const w = G.gm === 'ctf' ? (G.ts[0] === G.ts[1] ? '무승부!' : G.ts[0] > G.ts[1] ? '🔴 레드팀 승리!' : '🔵 블루팀 승리!') : '🏆 ' + ranked()[0].name + ' 우승!';
+  evt(w); if (G.mode === 'multi' && NET.host) { netSendU(JSON.stringify(snap())); netSendC(JSON.stringify({ t: 'me' })); }
+  if (G.me) { G.me.auto = true; onMeFinish(); }
+}
+function modeStep(dt) {
+  if (G.gm === 'race' || G.modeDone) return;
+  if (G.mode === 'multi' && !NET.host) { if (G.flags) for (const f of G.flags) { const c = f.carrier; f.x = c ? c.x : f.hx; f.z = c ? c.z : f.hz; } return; }
+  const ks = G.karts.filter(k => !k.gone), d2 = (a, b) => (a.x - b.x) ** 2 + (a.z - b.z) ** 2;
+  if (G.gm === 'ctf') {
+    for (const f of G.flags) { if (f.carrier && f.carrier.gone) { f.carrier.flag = null; f.carrier = null; } f.x = f.carrier ? f.carrier.x : f.hx; f.z = f.carrier ? f.carrier.z : f.hz; }
+    for (const k of ks) for (const f of G.flags) if (f.team !== k.team && !f.carrier && !k.flag && d2(k, f) < 49) { f.carrier = k; k.flag = f; evt(`🚩 ${k.name} 깃발 획득!`); }
+    for (const k of ks) if (k.flag) {
+      const own = G.flags[k.team], f = k.flag;
+      if (!own.carrier && d2(k, { x: own.hx, z: own.hz }) < 49) { G.ts[k.team]++; k.pts += 3; f.carrier = null; f.x = f.hx; f.z = f.hz; k.flag = null; evt(`${k.team ? '🔵 블루' : '🔴 레드'}팀 득점! (${k.name})`); continue; }
+      for (const o of ks) if (o.team !== k.team && d2(k, o) < 13) { f.carrier = null; f.x = f.hx; f.z = f.hz; k.flag = null; o.pts += 1; evt(`💥 ${o.name} 깃발 탈환!`); break; }
+    }
+    if (G.ts[0] >= 3 || G.ts[1] >= 3 || G.raceT >= G.dur) endMode();
+  } else if (G.gm === 'coin') {
+    for (const c of G.coins) { if (!c.on) { if (G.raceT - c.t > 6) newCoin(c); continue; } for (const k of ks) if (d2(k, c) < 13) { c.on = false; c.t = G.raceT; k.pts++; break; } }
+    if (G.raceT >= G.dur) endMode();
+  } else if (G.gm === 'tag') {
+    G.tagCD -= dt; let it = ks.find(k => k.it); if (!it && ks.length) { it = ks[Math.random() * ks.length | 0]; it.it = true; }
+    for (const k of ks) if (!k.it) k.pts += dt;
+    if (it && G.tagCD <= 0) for (const o of ks) if (o !== it && d2(it, o) < 11) { it.it = false; o.it = true; G.tagCD = 1.5; evt(`💣 ${o.name} 술래!`); break; }
+    if (G.raceT >= G.dur) endMode();
+  }
 }
 
 /* ---------------------------------------------------------------- 관중 함성 (WebAudio 노이즈, 관중석 가까울수록 커짐) */
