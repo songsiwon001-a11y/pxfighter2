@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>WEB KART RACER</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:#1a1d2e;font-family:'Pretendard','Malgun Gothic','Apple SD Gothic Neo','Noto Sans KR',sans-serif;color:#fff;user-select:none;-webkit-user-select:none}
+canvas{position:fixed;left:0;top:0;width:100%;height:100%;display:block}
+#hud{pointer-events:none}
+#ui{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+section{display:none;pointer-events:auto;background:rgba(14,17,34,.88);border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:22px 26px;width:min(94vw,660px);max-height:92vh;overflow:auto;backdrop-filter:blur(6px)}
+section.on{display:block}
+h1{font-size:34px;font-weight:900;font-style:italic;letter-spacing:-1px;line-height:1.05}
+h1 em{color:#ffd23f;font-style:italic}
+h2{font-size:21px;margin-bottom:12px}
+.sub{color:#9aa3c7;font-size:13px;margin:6px 0 16px}
+label{display:block;font-size:12px;color:#9aa3c7;margin:12px 0 5px}
+input[type=text]{width:100%;background:#0b0e1e;border:1px solid #333b66;color:#fff;border-radius:8px;padding:10px 12px;font-size:15px;font-family:inherit}
+.row{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
+.btn{flex:1;min-width:120px;background:#ffd23f;color:#1a1400;border:0;border-radius:9px;padding:12px 14px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit}
+.btn:hover{filter:brightness(1.08)}
+.btn.sec{background:#2a3157;color:#fff}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.sw{display:flex;gap:6px;flex-wrap:wrap}
+.sw i{width:30px;height:30px;border-radius:8px;border:2px solid transparent;cursor:pointer}
+.sw i.sel{border-color:#fff;transform:scale(1.12)}
+.maps{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.mp{border:2px solid transparent;border-radius:10px;padding:12px;color:#fff;text-align:left;cursor:pointer;font-family:inherit;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.mp b{display:block;font-size:15px}
+.mp small{font-size:11px;opacity:.9}
+.mp.sel{border-color:#fff}
+.list{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.item{display:flex;justify-content:space-between;align-items:center;background:#1a2042;border-radius:9px;padding:10px 12px;font-size:14px;gap:10px}
+.item .dot{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:8px;vertical-align:-1px}
+.tag{font-size:11px;padding:2px 7px;border-radius:99px;background:#2a3157;color:#c9d0f5}
+.tag.ok{background:#1f5a34;color:#aef2c4}
+.msg{margin-top:12px;font-size:13px;color:#ffb4a8;min-height:18px;line-height:1.4}
+.keys{font-size:12px;color:#9aa3c7;line-height:1.8;margin-top:14px;border-top:1px solid #262d55;padding-top:10px}
+.keys b{color:#fff;background:#262d55;border-radius:4px;padding:1px 6px;font-weight:700}
+select{width:100%;background:#0b0e1e;border:1px solid #333b66;color:#fff;border-radius:8px;padding:9px;font-size:14px;font-family:inherit}
+#toast{position:fixed;left:50%;top:56px;transform:translateX(-50%);background:rgba(0,0,0,.7);padding:8px 16px;border-radius:99px;font-size:14px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:9}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="hud"></canvas>
+<div id="toast"></div>
+<div id="ui">
+  <section id="s-menu" class="on">
+    <h1>WEB KART <em>RACER</em></h1>
+    <p class="sub">라이브러리 없는 순수 WebGL 3D · 크롬북 자동 최적화 · 서버 없는 P2P 멀티플레이 (최대 10명)</p>
+    <label>닉네임</label>
+    <input type="text" id="name" maxlength="10">
+    <label>카트 색상</label>
+    <div class="sw" id="colors"></div>
+    <div class="row">
+      <button class="btn" id="bSolo">혼자 플레이</button>
+      <button class="btn sec" id="bMulti">멀티플레이</button>
+    </div>
+    <div class="keys"><b>←</b><b>↑</b><b>↓</b><b>→</b> 이동 &nbsp; <b>Ctrl</b> 부스트 &nbsp; <b>Shift</b> 드리프트 &nbsp; <b>M</b> 마이크(멀티) &nbsp; <b>R</b> 복귀 &nbsp; <b>Esc</b> 나가기<br>코너를 돌면 부스터 게이지가 차올라요. 풀에 들어가면 느려지니 코스를 지키세요!</div>
+  </section>
+
+  <section id="s-solo">
+    <h2>혼자 플레이</h2>
+    <label>맵 선택</label>
+    <div class="maps" id="soloMaps"></div>
+    <label>AI 상대 수</label>
+    <select id="botN"><option value="0">0 (타임어택)</option><option value="3">3</option><option value="5" selected>5</option><option value="7">7</option><option value="9">9</option></select>
+    <label>바퀴 수</label>
+    <select id="lapN"><option>1</option><option>2</option><option selected>3</option><option>5</option></select>
+    <div class="row"><button class="btn" id="bSoloGo">출발!</button><button class="btn sec" data-back>뒤로</button></div>
+  </section>
+
+  <section id="s-rooms">
+    <h2>멀티플레이 대기열</h2>
+    <div class="row" style="margin-top:0">
+      <button class="btn" id="bQuick">빠른 매칭</button>
+      <button class="btn sec" id="bRefresh">새로고침</button>
+    </div>
+    <label>방 목록</label>
+    <div class="list" id="roomList"></div>
+    <label>새 방 만들기 (맵 선택)</label>
+    <div class="maps" id="roomMaps"></div>
+    <div class="row"><button class="btn" id="bCreate">방 만들기</button><button class="btn sec" data-back>뒤로</button></div>
+    <div class="msg" id="roomsMsg"></div>
+  </section>
+
+  <section id="s-room">
+    <h2 id="roomTitle">대기실</h2>
+    <label>맵 <span id="mapHint" style="color:#666"></span></label>
+    <div class="maps" id="lobbyMaps"></div>
+    <label>참가자 (2~10명)</label>
+    <div class="list" id="playerList"></div>
+    <div class="row"><button class="btn" id="bStart" disabled>게임 시작</button><button class="btn sec" id="bLeave">나가기</button></div>
+    <div class="msg" id="roomMsg"></div>
+  </section>
+
+  <section id="s-result">
+    <h2>🏁 결과</h2>
+    <div class="list" id="resList"></div>
+    <div class="row"><button class="btn" id="bAgain">다시 하기</button><button class="btn sec" id="bBack">나가기</button></div>
+  </section>
+</div>
+
+<script>
+'use strict';
+/* =====================================================================
+   WEB KART RACER — 라이브러리 없음
+   - 렌더링: 순수 WebGL (직접 만든 행렬/셰이더)
+   - 멀티: WebRTC DataChannel 풀메시 P2P (서버 없음)
+   - 대기열/시그널링: Firebase Firestore REST (SDK 없이 fetch)
+   ===================================================================== */
+const firebaseConfig = {
+  apiKey: "AIzaSyDU4famr5DzAYlNpjcTcUUqjzDxEvjVeec",
+  authDomain: "webdos-11d5a.firebaseapp.com",
+  projectId: "webdos-11d5a",
+  storageBucket: "webdos-11d5a.firebasestorage.app",
+  messagingSenderId: "500610787415",
+  appId: "1:500610787415:web:75e8268bcbfd2bef211b12"
+};
+const BASE = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents`;
+const KEY = firebaseConfig.apiKey;
+
+const $ = s => document.querySelector(s);
+const C = h => [(h >> 16 & 255) / 255, (h >> 8 & 255) / 255, (h & 255) / 255];
+const hex = n => n.toString(16).padStart(6, '0');
+const wrap = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const r2 = v => Math.round(v * 100) / 100;
+const rid = () => Math.random().toString(36).slice(2, 10);
+function rng(s) { return () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+/* ---------------------------------------------------------------- maps */
+const MAPS = [
+  { name: '그린 서킷', desc: '넓고 완만한 입문 코스', sky: [0x3f86d6, 0xcfe8ff], ground: [0x3f9b3f, 0x388c38], road: 0x4a4a52, curb: [0xe53935, 0xffffff], wall: [0xffffff, 0xd32f2f], deco: 'pine', pine: [0x2e7d32, 0x1b5e20, 0x2e7d32], mtn: 0x6b8fb3,
+    pts: [[0,-250],[200,-250],[330,-120],[330,100],[200,220],[0,160],[-150,250],[-320,150],[-330,-60],[-220,-210]] },
+  { name: '사막 협곡', desc: '구불구불 S자 연속 코너', sky: [0xf0914a, 0xffe2b3], ground: [0xdcb26b, 0xd1a55c], road: 0x5a5148, curb: [0xff7043, 0xffffff], wall: [0xffe0b2, 0xbf6a30], deco: 'cactus', pine: [], mtn: 0xc98a52,
+    pts: [[0,-300],[250,-300],[380,-150],[250,0],[380,150],[250,300],[0,250],[-250,300],[-380,150],[-250,0],[-380,-150],[-250,-300]] },
+  { name: '설원 알파인', desc: '길고 기술적인 롱 코스', sky: [0x6fa8e0, 0xe8f4ff], ground: [0xf4f8fc, 0xe3ecf6], road: 0x6d7885, curb: [0x1e88e5, 0xffffff], wall: [0x90caf9, 0xffffff], deco: 'pine', snow: true, pine: [], mtn: 0xa9c4e0,
+    pts: [[0,-350],[300,-330],[420,-180],[300,-60],[120,-100],[60,50],[200,170],[420,230],[330,380],[60,350],[-160,260],[-330,360],[-450,200],[-330,40],[-420,-120],[-250,-300]] },
+  { name: '네온 시티 나이트', desc: '밤의 도심 헤어핀 코스', sky: [0x050514, 0x2a1450], ground: [0x14142a, 0x101024], road: 0x23232f, curb: [0xff2bd6, 0x00e5ff], wall: [0x00e5ff, 0xff2bd6], deco: 'city', pine: [], mtn: 0x2a1a5a,
+    pts: [[-350,-250],[0,-300],[350,-250],[470,-90],[360,60],[170,70],[130,190],[300,300],[230,430],[-40,450],[-280,350],[-360,190],[-300,40],[-480,-110]] }
+];
+[16, 22, 26, 0].forEach((h, i) => MAPS[i].hill = h);
+const KC = [0xe53935, 0x1e88e5, 0xfdd835, 0x43a047, 0x8e24aa, 0xfb8c00, 0x00bcd4, 0xec407a, 0xeeeeee, 0x37474f];
+const BOTN = ['번개', '터보', '초코', '마루', '바람', '로켓', '쿠키', '별이', '다람', '호랑'];
+
+/* ---------------------------------------------------------------- GL */
+const cv = $('#gl'), hud = $('#hud'), ctx = hud.getContext('2d');
+const gl = cv.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: true, stencil: true }) || cv.getContext('experimental-webgl');
+if (!gl) { document.body.innerHTML = '<p style="padding:40px">이 브라우저는 WebGL을 지원하지 않아요.</p>'; throw new Error('no webgl'); }
+
+const VS = `attribute vec3 p;attribute vec3 n;attribute vec3 c;uniform mat4 uVP;uniform mat4 uM;varying vec3 vc;varying vec3 vw;varying vec3 vn;
+void main(){vec4 w=uM*vec4(p,1.0);vw=w.xyz;vn=(uM*vec4(n,0.0)).xyz;vc=c;gl_Position=uVP*w;}`;
+const FS = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec3 vc;varying vec3 vw;varying vec3 vn;
+uniform vec3 uCam,uFog,uSun,uSky,uGnd,uSunC;uniform vec2 uFogR;uniform float uMat,uSh,uNight;
+float hh(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float nz(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hh(i),hh(i+vec2(1.,0.)),f.x),mix(hh(i+vec2(0.,1.)),hh(i+vec2(1.,1.)),f.x),f.y);}
+void main(){
+ if(uSh>.5){gl_FragColor=vec4(0.,0.,0.,.4);return;}
+ if(uMat>1.5){gl_FragColor=vec4(vc,1.);return;}
+ vec3 N=normalize(vn);vec3 V=uCam-vw;float d=length(V);V/=d;if(dot(N,V)<0.)N=-N;
+ vec3 c=pow(vc,vec3(2.2));
+ if(uMat<.5){float lod=1.-smoothstep(40.,260.,d);float g=nz(vw.xz*.35)*.55+(nz(vw.xz*1.7)*.3+hh(floor(vw.xz*14.))*.15)*lod;c*=.7+.6*g;}
+ float dif=max(dot(N,uSun),0.);
+ vec3 amb=mix(uGnd,uSky,N.y*.5+.5);
+ vec3 col=c*(amb*.75+uSunC*dif*1.15);
+ if(uMat<.5){float em=step(.97,max(vc.r,max(vc.g,vc.b)))*step(min(vc.r,min(vc.g,vc.b)),.55);col+=c*em*2.5*uNight;}
+ else{vec3 R=reflect(-V,N);float fr=pow(1.-max(dot(N,V),0.),4.);vec3 env=mix(uGnd,uSky*1.25,clamp(R.y*.7+.5,0.,1.));
+  col=col*(1.-.18*fr)+env*(.1+.5*fr);col+=uSunC*pow(max(dot(N,normalize(uSun+V)),0.),90.)*1.6;}
+ col=1.-exp(-col*1.25);col=pow(col,vec3(1./2.2));
+ float f=smoothstep(uFogR.x,uFogR.y,d);float sc=pow(max(dot(-V,uSun),0.),6.);
+ gl_FragColor=vec4(mix(col,mix(uFog,uSunC*.5+uFog*.3,sc*.35),f),1.);
+}`;
+function shader(t, s) { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; }
+const prog = gl.createProgram();
+gl.attachShader(prog, shader(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FS));
+gl.bindAttribLocation(prog, 0, 'p'); gl.bindAttribLocation(prog, 1, 'n'); gl.bindAttribLocation(prog, 2, 'c');
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+const uVP = gl.getUniformLocation(prog, 'uVP'), uM = gl.getUniformLocation(prog, 'uM'), uCam = gl.getUniformLocation(prog, 'uCam'),
+  uFog = gl.getUniformLocation(prog, 'uFog'), uFogR = gl.getUniformLocation(prog, 'uFogR');
+const UL = n => gl.getUniformLocation(prog, n), uSun = UL('uSun'), uSky = UL('uSky'), uGnd = UL('uGnd'), uSunC = UL('uSunC'), uMat = UL('uMat'), uSh = UL('uSh'), uNight = UL('uNight');
+gl.enableVertexAttribArray(0); gl.enableVertexAttribArray(1); gl.enableVertexAttribArray(2);
+gl.enable(gl.DEPTH_TEST);
+
+/* matrices (column-major) */
+const I4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+function perspective(fy, asp, n, f) { const t = 1 / Math.tan(fy / 2); return [t / asp, 0, 0, 0, 0, t, 0, 0, 0, 0, (f + n) / (n - f), -1, 0, 0, 2 * f * n / (n - f), 0]; }
+function lookAt(e, c, u) {
+  let zx = e[0] - c[0], zy = e[1] - c[1], zz = e[2] - c[2], l = Math.hypot(zx, zy, zz); zx /= l; zy /= l; zz /= l;
+  let xx = u[1] * zz - u[2] * zy, xy = u[2] * zx - u[0] * zz, xz = u[0] * zy - u[1] * zx; l = Math.hypot(xx, xy, xz); xx /= l; xy /= l; xz /= l;
+  const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+  return [xx, yx, zx, 0, xy, yy, zy, 0, xz, yz, zz, 0, -(xx * e[0] + xy * e[1] + xz * e[2]), -(yx * e[0] + yy * e[1] + yz * e[2]), -(zx * e[0] + zy * e[1] + zz * e[2]), 1];
+}
+function mul(a, b) { const o = new Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s; } return o; }
+function modelY(x, y, z, a) { const c = Math.cos(a), s = Math.sin(a); return [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, x, y, z, 1]; }
+
+/* mesh builder */
+class MB {
+  constructor() { this.d = []; }
+  tri(a, b, c, col, na, nb, nc) {
+    if (!na) {
+      const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, l = Math.hypot(nx, ny, nz); if (l < 1e-9) return;
+      na = nb = nc = [nx / l, ny / l, nz / l];
+    }
+    const P = [a, b, c], Q = [na, nb, nc], o = this.oy || 0;
+    for (let i = 0; i < 3; i++) this.d.push(P[i][0], P[i][1] + o, P[i][2], Q[i][0], Q[i][1], Q[i][2], col[0], col[1], col[2]);
+  }
+  quad(a, b, c, d, col) { this.tri(a, b, c, col); this.tri(a, c, d, col); }
+  box(cx, cy, cz, sx, sy, sz, col, ang = 0) {
+    const ca = Math.cos(ang), sa = Math.sin(ang), hx = sx / 2, hy = sy / 2, hz = sz / 2;
+    const P = (lx, ly, lz) => [cx + lx * ca + lz * sa, cy + ly, cz - lx * sa + lz * ca];
+    const v = [P(-hx, -hy, -hz), P(hx, -hy, -hz), P(hx, hy, -hz), P(-hx, hy, -hz), P(-hx, -hy, hz), P(hx, -hy, hz), P(hx, hy, hz), P(-hx, hy, hz)];
+    const f = [[0, 1, 2, 3], [5, 4, 7, 6], [4, 0, 3, 7], [1, 5, 6, 2], [3, 2, 6, 7], [4, 5, 1, 0]];
+    for (const q of f) this.quad(v[q[0]], v[q[1]], v[q[2]], v[q[3]], col);
+  }
+  cone(cx, cy, cz, r, h, seg, col) {
+    const ap = [cx, cy + h, cz], k = r / h, l = Math.hypot(1, k), nn = a => [Math.cos(a) / l, k / l, Math.sin(a) / l];
+    for (let i = 0; i < seg; i++) {
+      const a0 = i / seg * Math.PI * 2, a1 = (i + 1) / seg * Math.PI * 2;
+      this.tri(ap, [cx + Math.cos(a0) * r, cy, cz + Math.sin(a0) * r], [cx + Math.cos(a1) * r, cy, cz + Math.sin(a1) * r], col, nn((a0 + a1) / 2), nn(a0), nn(a1));
+    }
+  }
+  sph(cx, cy, cz, rx, ry, rz, seg, col) {
+    const Q = Math.max(3, seg >> 1), pt = (i, j) => { const t = i / Q * Math.PI, a = j / seg * Math.PI * 2, x = Math.sin(t) * Math.cos(a), y = Math.cos(t), z = Math.sin(t) * Math.sin(a); return [[cx + x * rx, cy + y * ry, cz + z * rz], [x / rx, y / ry, z / rz]]; };
+    for (let i = 0; i < Q; i++) for (let j = 0; j < seg; j++) { const A = pt(i, j), B = pt(i + 1, j), D = pt(i + 1, j + 1), E = pt(i, j + 1); this.tri(A[0], B[0], D[0], col, A[1], B[1], D[1]); this.tri(A[0], D[0], E[0], col, A[1], D[1], E[1]); }
+  }
+  cyl(cx, cy, cz, r, len, seg, col, ax) { // ax 0: axis along X, 1: along Y
+    const h = len / 2, P = (a, l) => ax ? [cx + Math.cos(a) * r, cy + l, cz + Math.sin(a) * r] : [cx + l, cy + Math.cos(a) * r, cz + Math.sin(a) * r], N = a => ax ? [Math.cos(a), 0, Math.sin(a)] : [0, Math.cos(a), Math.sin(a)], U = ax ? [0, 1, 0] : [1, 0, 0], D = ax ? [0, -1, 0] : [-1, 0, 0];
+    for (let i = 0; i < seg; i++) {
+      const a0 = i / seg * Math.PI * 2, a1 = (i + 1) / seg * Math.PI * 2, n0 = N(a0), n1 = N(a1);
+      this.tri(P(a0, -h), P(a0, h), P(a1, h), col, n0, n0, n1); this.tri(P(a0, -h), P(a1, h), P(a1, -h), col, n0, n1, n1);
+      const t = ax ? [cx, cy + h, cz] : [cx + h, cy, cz], b = ax ? [cx, cy - h, cz] : [cx - h, cy, cz];
+      this.tri(t, P(a0, h), P(a1, h), col, U, U, U); this.tri(b, P(a1, -h), P(a0, -h), col, D, D, D);
+    }
+  }
+  build() { const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.d), gl.STATIC_DRAW); return { b, n: this.d.length / 9 }; }
+}
+function drawMesh(m, model) {
+  gl.uniformMatrix4fv(uM, false, model);
+  gl.bindBuffer(gl.ARRAY_BUFFER, m.b);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 36, 0);
+  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 36, 12);
+  gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 36, 24);
+  gl.drawArrays(gl.TRIANGLES, 0, m.n);
+}
+
+/* ---------------------------------------------------------------- track */
+function makeTrack(def) {
+  const P = def.pts, n = P.length, D = [];
+  for (let i = 0; i < n; i++) {
+    const p0 = P[(i + n - 1) % n], p1 = P[i], p2 = P[(i + 1) % n], p3 = P[(i + 2) % n];
+    for (let s = 0; s < 30; s++) {
+      const t = s / 30, t2 = t * t, t3 = t2 * t;
+      D.push([0, 1].map(k => .5 * ((2 * p1[k]) + (-p0[k] + p2[k]) * t + (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * t2 + (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * t3)));
+    }
+  }
+  const M = D.length, cum = [0];
+  for (let i = 1; i <= M; i++) { const a = D[i - 1], b = D[i % M]; cum.push(cum[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1])); }
+  const L = cum[M], N = Math.round(L / 4), st = L / N;
+  const cx = new Float32Array(N), cz = new Float32Array(N), tx = new Float32Array(N), tz = new Float32Array(N), nx = new Float32Array(N), nz = new Float32Array(N);
+  let j = 0;
+  for (let k = 0; k < N; k++) {
+    const tg = k * st; while (cum[j + 1] < tg) j++;
+    const a = D[j], b = D[(j + 1) % M], f = (tg - cum[j]) / (cum[j + 1] - cum[j]);
+    cx[k] = a[0] + (b[0] - a[0]) * f; cz[k] = a[1] + (b[1] - a[1]) * f;
+  }
+  for (let k = 0; k < N; k++) {
+    const p = (k + N - 1) % N, q = (k + 1) % N; let dx = cx[q] - cx[p], dz = cz[q] - cz[p]; const l = Math.hypot(dx, dz); dx /= l; dz /= l;
+    tx[k] = dx; tz[k] = dz; nx[k] = dz; nz[k] = -dx;
+  }
+  return { N, cx, cz, tx, tz, nx, nz, hw: 11, L };
+}
+function locate(x, z, hint) {
+  const tr = G.tr, N = tr.N; let best = 1e18, bi = hint;
+  for (let d = -16; d <= 16; d++) { const i = (hint + d + N * 4) % N, dx = x - tr.cx[i], dz = z - tr.cz[i], q = dx * dx + dz * dz; if (q < best) { best = q; bi = i; } }
+  return bi;
+}
+function locateAll(x, z) {
+  const tr = G.tr; let best = 1e18, bi = 0;
+  for (let i = 0; i < tr.N; i++) { const dx = x - tr.cx[i], dz = z - tr.cz[i], q = dx * dx + dz * dz; if (q < best) { best = q; bi = i; } }
+  return bi;
+}
+
+function buildWorld(def, tr) {
+  const mb = new MB(), N = tr.N, hw = tr.hw, rand = rng(N * 7 + def.pts.length);
+  const road = C(def.road), shade = (c, f) => c.map(v => clamp(v * f, 0, 1));
+  // terrain (smooth heightmap, flat near the track)
+  const hA = def.hill || 0, S = 30, R = 1200, GN = R * 2 / S + 1, g0 = C(def.ground[0]), g1 = C(def.ground[1]);
+  const near = (x, z) => { let b = 1e18; for (let i = 0; i < N; i += 3) { const dx = x - tr.cx[i], dz = z - tr.cz[i], q = dx * dx + dz * dz; if (q < b) b = q; } return Math.sqrt(b); };
+  const hf = (x, z) => { if (!hA) return 0; const t = clamp((near(x, z) - 35) / 80, 0, 1); return hA * t * t * (3 - 2 * t) * (Math.sin(x * .0061 + 1.3) * Math.cos(z * .0052) + .55 * Math.sin(x * .0137 + z * .0113 + 2) + .25 * Math.sin(x * .031 - z * .027) + .9); };
+  const HM = new Float32Array(GN * GN); for (let j = 0; j < GN; j++) for (let i = 0; i < GN; i++) HM[j * GN + i] = hf(-R + i * S, -R + j * S);
+  const gi = (i, j) => HM[clamp(j, 0, GN - 1) * GN + clamp(i, 0, GN - 1)];
+  const VT = (i, j) => { const nx = gi(i - 1, j) - gi(i + 1, j), nz = gi(i, j - 1) - gi(i, j + 1), l = Math.hypot(nx, 2 * S, nz); return [[-R + i * S, gi(i, j), -R + j * S], [nx / l, 2 * S / l, nz / l]]; };
+  for (let j = 0; j < GN - 1; j++) for (let i = 0; i < GN - 1; i++) {
+    const A = VT(i, j), B = VT(i + 1, j), E = VT(i + 1, j + 1), D = VT(i, j + 1), t = clamp(.5 + .5 * Math.sin(i * 1.3 + Math.cos(j * .9) * 2) * Math.cos(j * .7) + (rand() - .5) * .35, 0, 1);
+    const cl = [0, 1, 2].map(k => (g0[k] + (g1[k] - g0[k]) * t) * (1 + gi(i, j) * .01));
+    mb.tri(A[0], B[0], E[0], cl, A[1], B[1], E[1]); mb.tri(A[0], E[0], D[0], cl, A[1], E[1], D[1]);
+  }
+  // road, curbs, walls
+  const cu = [C(def.curb[0]), C(def.curb[1])], wl = [C(def.wall[0]), C(def.wall[1])], dash = C(0xffffff);
+  const pt = (i, o, y) => [tr.cx[i] + tr.nx[i] * o, y, tr.cz[i] + tr.nz[i] * o];
+  for (let i = 0; i < N; i++) {
+    const j = (i + 1) % N, col = (i & 1) ? road : shade(road, 1.07);
+    mb.quad(pt(i, hw, .1), pt(i, -hw, .1), pt(j, -hw, .1), pt(j, hw, .1), col);
+    if ((i & 7) < 4) mb.quad(pt(i, .3, .11), pt(i, -.3, .11), pt(j, -.3, .11), pt(j, .3, .11), dash);
+    const cc = cu[(i >> 1) & 1];
+    mb.quad(pt(i, hw, .13), pt(i, hw + 1.6, .13), pt(j, hw + 1.6, .13), pt(j, hw, .13), cc);
+    mb.quad(pt(i, -hw, .13), pt(i, -hw - 1.6, .13), pt(j, -hw - 1.6, .13), pt(j, -hw, .13), cc);
+    const wc = wl[(i / 3 | 0) & 1], wo = hw + 4;
+    mb.quad(pt(i, wo, 0), pt(j, wo, 0), pt(j, wo, 1.5), pt(i, wo, 1.5), wc);
+    mb.quad(pt(i, -wo, 0), pt(j, -wo, 0), pt(j, -wo, 1.5), pt(i, -wo, 1.5), wc);
+  }
+  // start line + banner
+  const sa = Math.atan2(tr.tx[0], tr.tz[0]), W = 2 * hw / 8;
+  for (let r = 0; r < 2; r++) for (let k = 0; k < 8; k++) {
+    const o = -hw + (k + .5) * W, ax = tr.cx[0] + tr.nx[0] * o + tr.tx[0] * (r * 1.4 + .7), az = tr.cz[0] + tr.nz[0] * o + tr.tz[0] * (r * 1.4 + .7);
+    mb.box(ax, .15, az, W, .02, 1.4, ((k + r) & 1) ? C(0x111111) : C(0xffffff), sa);
+  }
+  for (const s of [-1, 1]) mb.box(tr.cx[0] + tr.nx[0] * s * (hw + 2.6), 5, tr.cz[0] + tr.nz[0] * s * (hw + 2.6), .9, 10, .9, C(0xdddddd), sa);
+  const BW = (2 * hw + 5.2) / 14;
+  for (let k = 0; k < 14; k++) { const o = -hw - 2.6 + (k + .5) * BW; mb.box(tr.cx[0] + tr.nx[0] * o, 9.6, tr.cz[0] + tr.nz[0] * o, BW, 1.6, 1, (k & 1) ? C(0x111111) : C(0xffffff), sa); }
+  // stadium atmosphere: grandstands, cheering crowd, flags, billboards, floodlights
+  mb.crowd = [new MB(), new MB()]; mb.stands = [];
+  const free = (x, z, m) => { for (let i = 0; i < N; i += 2) { const dx = x - tr.cx[i], dz = z - tr.cz[i]; if (dx * dx + dz * dz < m * m) return false; } return true; };
+  const skin = [0xf1c27d, 0xe0ac69, 0xc68642, 0x8d5524, 0xffdbac], shirt = [0xe53935, 0x1e88e5, 0xfdd835, 0xffffff, 0x43a047, 0xff9800, 0x8e24aa, 0x00bcd4];
+  const stand = (i, s) => {
+    const o = hw + 15, sb = Math.atan2(tr.tx[i], tr.tz[i]);
+    if (!free(tr.cx[i] + tr.nx[i] * s * (o + 12), tr.cz[i] + tr.nz[i] * s * (o + 12), o + 8)) return false;
+    const at = (oo, t) => [tr.cx[i] + tr.nx[i] * s * oo + tr.tx[i] * t, tr.cz[i] + tr.nz[i] * s * oo + tr.tz[i] * t];
+    mb.stands.push(at(o + 5, 0));
+    for (let r = 0; r < 5; r++) {
+      const H = 1.4 + r * 1.5, b = at(o + r * 2.4, 0);
+      mb.box(b[0], H / 2, b[1], 2.4, H, 46, C(0x8a8f98), sb);
+      for (let k = 0; k < 21; k++) {
+        const q = at(o + r * 2.4, (k - 10) * 2.1), cr = mb.crowd[(k + r) & 1];
+        cr.box(q[0], H + .45, q[1], .8, .9, .8, C(shirt[(k * 7 + r * 3) % 8]), sb);
+        cr.box(q[0], H + 1.15, q[1], .5, .5, .5, C(skin[(k * 3 + r) % 5]), sb);
+      }
+    }
+    const rf = at(o + 5, 0); mb.box(rf[0], 9.5, rf[1], 14, .5, 50, C(0xdddddd), sb);
+    for (const t of [-24, 24]) {
+      const a = at(o + 9.5, t), f = at(o + 12, t * 1.08); mb.box(a[0], 4.7, a[1], .5, 9.4, .5, C(0xbbbbbb), sb);
+      mb.box(f[0], 9, f[1], .6, 18, .6, C(0x666a73), sb); mb.box(f[0], 18.4, f[1], 1.2, 1.2, 3.2, C(0xffe14d), sb);
+    }
+    for (let t = -20; t <= 20; t += 10) {
+      const f = at(o - 3, t); mb.box(f[0], 2.5, f[1], .15, 5, .15, C(0xeeeeee), sb); mb.box(f[0], 4.5, f[1], .1, 1, 1.8, C(shirt[(t / 10 + 2 + (s > 0 ? 0 : 3)) % 8]), sb);
+    }
+    return true;
+  };
+  stand(14, 1); stand(14, -1);
+  for (let k = 1; k < 7; k++) { const i = Math.floor(N * k / 7) % N; stand(i, k & 1 ? 1 : -1) || stand(i, k & 1 ? -1 : 1); }
+  const bc = [0xe53935, 0x1e88e5, 0xfdd835, 0x43a047, 0xff9800, 0xffffff];
+  for (let i = 20, n = 0; i < N; i += 22, n++) {
+    const s = n & 1 ? 1 : -1, sb = Math.atan2(tr.tx[i], tr.tz[i]), x = tr.cx[i] + tr.nx[i] * s * (hw + 8.5), z = tr.cz[i] + tr.nz[i] * s * (hw + 8.5);
+    mb.box(x, 2.8, z, .35, 2.6, 9, C(bc[n % 6]), sb); mb.box(x - tr.nx[i] * s * .02, 2.8, z - tr.nz[i] * s * .02, .4, .5, 9, C(0xffffff), sb);
+    for (const t of [-3.5, 3.5]) mb.box(x + tr.tx[i] * t, 1.1, z + tr.tz[i] * t, .3, 2.2, .3, C(0x555a63), sb);
+  }
+  for (let i = 0; i < N; i++) {
+    const j = (i + 10) % N, dx = tr.tx[j] - tr.tx[i], dz = tr.tz[j] - tr.tz[i];
+    if (Math.hypot(dx, dz) > .3) {
+      const s = (dx * tr.nx[i] + dz * tr.nz[i]) > 0 ? -1 : 1, x = tr.cx[i] + tr.nx[i] * s * (hw + 5.6), z = tr.cz[i] + tr.nz[i] * s * (hw + 5.6);
+      for (let l = 0; l < 2; l++) mb.cyl(x, .4 + l * .8, z, .95, .8, 8, ((i >> 2) & 3) === 0 ? C(0xe8e8e8) : C(0x1c1c20), 1);
+    }
+  }
+  // decorations
+  const clear = (x, z, m) => { const m2 = m * m; for (let i = 0; i < N; i += 2) { const dx = x - tr.cx[i], dz = z - tr.cz[i]; if (dx * dx + dz * dz < m2) return false; } return true; };
+  const deco0 = (x, z) => {
+    if (def.deco === 'pine') {
+      const h = 5 + rand() * 4, g = def.snow ? [0xe9f5f0, 0xd5e8df, 0xc2dbd0] : def.pine;
+      mb.cyl(x, h * .2, z, .45, h * .4, 6, C(0x6d4c41), 1); const bl = !def.snow && rand() < .4;
+      if (bl) { const rc = C([0x4c8f3a, 0x5fa243, 0x3d7d32][rand() * 3 | 0]); mb.sph(x, h * .62, z, h * .34, h * .3, h * .34, 8, rc); mb.sph(x + h * .12, h * .5, z + h * .08, h * .24, h * .22, h * .24, 7, rc); }
+      else for (let k = 0; k < 3; k++) mb.cone(x, h * .3 + k * h * .28, z, (3.6 - k * .9) * (h / 7), h * .45, 9, C(g[k % g.length]));
+    } else if (def.deco === 'cactus') {
+      const h = 5 + rand() * 4, c = C(0x3d8b4a);
+      mb.cyl(x, h / 2, z, .7, h, 8, c, 1); mb.sph(x, h, z, .7, .6, .7, 8, c); mb.box(x + 1.4, h * .55, z, 1.6, .9, .9, c); mb.box(x + 2.1, h * .55 + 1.2, z, .9, 2.6, .9, c);
+      if (rand() > .5) { mb.box(x - 1.3, h * .4, z, 1.4, .9, .9, c); mb.box(x - 1.9, h * .4 + 1, z, .9, 2.2, .9, c); }
+    } else {
+      const w = 14 + rand() * 20, d = 14 + rand() * 20, h = 30 + rand() * 120;
+      const bc = [0x1a1a40, 0x23235a, 0x2d1b4e, 0x16213e][rand() * 4 | 0], ne = [0xff2bd6, 0x00e5ff, 0xffee00, 0x7cff00][rand() * 4 | 0];
+      mb.box(x, h / 2, z, w, h, d, C(bc)); mb.box(x, h + .4, z, w + .6, .8, d + .6, C(ne));
+      for (let k = 0; k < 3; k++) mb.box(x, h * (.2 + k * .25 + rand() * .08), z, w + .3, 1.4, d + .3, C(rand() > .5 ? 0xffd966 : 0x66e0ff));
+    }
+  };
+  const deco = (x, z) => { mb.oy = hf(x, z); deco0(x, z); mb.oy = 0; };
+  for (let i = 0; i < N; i += 4) for (const s of [-1, 1]) {
+    const dist = hw + (def.deco === 'city' ? 30 : 12) + rand() * 10, x = tr.cx[i] + tr.nx[i] * s * dist, z = tr.cz[i] + tr.nz[i] * s * dist;
+    if (clear(x, z, hw + (def.deco === 'city' ? 26 : 9))) deco(x, z);
+  }
+  if (def.deco === 'city') for (let i = 0; i < N; i += 8) for (const s of [-1, 1]) {
+    const x = tr.cx[i] + tr.nx[i] * s * (hw + 6.5), z = tr.cz[i] + tr.nz[i] * s * (hw + 6.5);
+    mb.box(x, 4, z, .35, 8, .35, C(0x888899)); mb.box(x, 8.3, z, 1.2, .5, 1.2, C(s > 0 ? 0xff2bd6 : 0x00e5ff));
+  }
+  for (let k = 0; k < 150; k++) { const x = (rand() - .5) * 1500, z = (rand() - .5) * 1500; if (clear(x, z, hw + (def.deco === 'city' ? 45 : 40))) deco(x, z); }
+  // distant mountains
+  const mc = C(def.mtn);
+  for (let k = 0; k < 28; k++) { const a = k / 28 * Math.PI * 2 + rand() * .2, d = 820 + rand() * 120, h = 90 + rand() * 160; mb.cone(Math.cos(a) * d, 0, Math.sin(a) * d, 130 + rand() * 120, h, 6, shade(mc, .85 + rand() * .3)); }
+  return mb;
+}
+function minimap(tr) {
+  let a = 1e9, b = -1e9, c = 1e9, d = -1e9;
+  for (let i = 0; i < tr.N; i++) { a = Math.min(a, tr.cx[i]); b = Math.max(b, tr.cx[i]); c = Math.min(c, tr.cz[i]); d = Math.max(d, tr.cz[i]); }
+  return { x0: a, x1: b, z0: c, z1: d };
+}
+
+/* kart models */
+const kartCache = {};
+function kartMesh(ci) {
+  if (kartCache[ci]) return kartCache[ci];
+  const m = new MB(), c = C(KC[ci]), dk = C(0x1b1b20), tire = C(0x0e0e10), rim = C(0xcfd3d8);
+  m.box(0, .78, .1, 1.7, .46, 2.9, c); m.box(0, .66, 2.0, 1.1, .34, 1.5, c); m.box(0, .5, 2.9, 2.3, .1, .6, dk);
+  for (const sx of [-1, 1]) { m.box(sx * 1.12, .6, 3.0, .08, .4, .6, c); m.box(sx * 1.0, .72, -.1, .4, .5, 1.7, c); m.box(sx * .42, 1.05, -1.7, .18, .22, .8, C(0x9a9ea5)); }
+  m.sph(0, 1.08, -1.0, .6, .42, .95, 10, c); m.box(0, 1.02, 1.5, .34, .02, 1.7, C(0xffffff)); m.box(0, 1.0, -.1, .95, .5, .9, dk);
+  m.sph(0, 1.55, -.2, .42, .5, .34, 10, C(0xf5f5f5)); m.sph(0, 2.17, -.05, .36, .38, .4, 12, C(0xf0f0f0)); m.box(0, 2.17, .27, .52, .17, .12, C(0x10131a));
+  m.box(0, 1.48, .55, .7, .1, .1, dk); m.box(0, 1.3, .5, .08, .4, .08, dk);
+  m.box(0, 1.9, -1.95, 2.0, .12, .7, dk);
+  for (const sx of [-1, 1]) {
+    m.box(sx * .7, 1.45, -1.9, .1, .9, .12, dk); m.box(sx * 1.0, 1.9, -1.95, .08, .5, .8, c);
+    m.cyl(sx * 1.15, .5, 1.5, .5, .42, 14, tire, 0); m.cyl(sx * 1.37, .5, 1.5, .3, .04, 10, rim, 0);
+    m.cyl(sx * 1.25, .56, -1.3, .6, .6, 14, tire, 0); m.cyl(sx * 1.57, .56, -1.3, .36, .04, 10, rim, 0);
+  }
+  m.box(0, .2, 0, 2.0, .04, 3.6, C(0x08080a));
+  return kartCache[ci] = m.build();
+}
+const sparkM = [], sparkC = [0x4fc3ff, 0xffa21f, 0xff3df2];
+function sparkMesh(l) { if (!sparkM[l]) { const m = new MB(), c = C(sparkC[l]); for (const sx of [-1, 1]) { m.box(sx * 1.5, .25, -2.0, .35, .3, 1.1, c); m.box(sx * 1.7, .5, -2.6, .2, .2, .6, C(0xffffff)); } sparkM[l] = m.build(); } return sparkM[l]; }
+const dLevel = k => k.drift ? 1 + Math.min(2, (k.dtm / .9) | 0) : (k.dl || 0);
+let flameMesh = null;
+function getFlame() { if (!flameMesh) { const m = new MB(); m.box(-.5, .8, -2.7, .5, .5, 1.8, C(0xff8a1f)); m.box(.5, .8, -2.7, .5, .5, 1.8, C(0xff8a1f)); m.box(-.5, .8, -3.2, .3, .3, 1.2, C(0xfff27a)); m.box(.5, .8, -3.2, .3, .3, 1.2, C(0xfff27a)); flameMesh = m.build(); } return flameMesh; }
+
+/* ---------------------------------------------------------------- game state */
+const G = { state: 'idle', mode: 'solo', map: 0, tr: null, world: null, karts: [], me: null, t0: 0, raceT: 0, laps: 3, camA: 0, lastSend: 0, wrongT: 0, hint: 0, solo: null };
+const MAXSP = 52;
+const cache = {};
+function loadMap(id) {
+  if (!cache[id]) { const def = MAPS[id], tr = makeTrack(def); const bw = buildWorld(def, tr); cache[id] = { def, tr, mesh: bw.build(), crowd: bw.crowd.map(c => c.build()), stands: bw.stands, mm: minimap(tr) }; }
+  const w = cache[id]; G.map = id; G.tr = w.tr; G.world = w;
+  cv.style.background = `linear-gradient(#${hex(w.def.sky[0])} 0%,#${hex(w.def.sky[1])} 46%,#${hex(w.def.sky[1])} 100%)`;
+}
+
+/* input */
+const K = {};
+addEventListener('keydown', e => {
+  K[e.code] = 1;
+  if (e.code === 'KeyM' && !e.repeat && !/INPUT|SELECT/.test((document.activeElement || {}).tagName || '')) toggleMic();
+  if (G.state !== 'idle' && (e.ctrlKey || e.code.startsWith('Arrow') || e.code === 'Space' || e.code === 'KeyR')) e.preventDefault();
+  if (G.state !== 'idle') { if (e.code === 'KeyR') resetKart(); if (e.code === 'Escape') exitRace(); }
+});
+addEventListener('keyup', e => { K[e.code] = 0; });
+addEventListener('blur', () => { for (const k in K) K[k] = 0; });
+function readInput() {
+  return { thr: K.ArrowUp, brk: K.ArrowDown, steer: (K.ArrowLeft ? 1 : 0) - (K.ArrowRight ? 1 : 0), boost: K.ControlLeft || K.ControlRight, drift: K.ShiftLeft || K.ShiftRight };
+}
+function botInput(k) {
+  const tr = G.tr, N = tr.N, j = (k.idx + 7 + ((Math.max(0, k.sp) / 5) | 0)) % N;
+  const tx = tr.cx[j] + tr.nx[j] * k.off, tz = tr.cz[j] + tr.nz[j] * k.off;
+  const d = wrap(Math.atan2(tx - k.x, tz - k.z) - k.a), ad = Math.abs(d);
+  return { thr: ad < .8 && k.sp < MAXSP * (k.auto ? .8 : k.skill), brk: ad > 1 && k.sp > 22, steer: clamp(d * 3, -1, 1), boost: k.gauge > .95 && ad < .12 };
+}
+function resetKart() {
+  const k = G.me; if (!k || G.state === 'idle') return; const tr = G.tr, i = locateAll(k.x, k.z);
+  k.x = tr.cx[i]; k.z = tr.cz[i]; k.a = Math.atan2(tr.tx[i], tr.tz[i]); k.vx = k.vz = k.sp = 0; k.idx = i;
+}
+
+/* physics */
+function stepKart(k, dt) {
+  const tr = G.tr, N = tr.N, inp = (k.bot || k.auto) ? botInput(k) : readInput();
+  let i = k.idx;
+  const lat = (k.x - tr.cx[i]) * tr.nx[i] + (k.z - tr.cz[i]) * tr.nz[i], off = Math.abs(lat) > tr.hw + 1.6;
+  let bo = false;
+  if (inp.boost && k.gauge > 0 && (k.boosting || k.gauge > .12)) { bo = true; k.gauge = Math.max(0, k.gauge - dt / 2.4); }
+  k.boosting = bo;
+  const fx = Math.sin(k.a), fz = Math.cos(k.a), slip = Math.abs(k.vx * fz - k.vz * fx);
+  if (!bo) k.gauge = Math.min(1, k.gauge + dt * (.045 + (k.drift ? .12 : 0) + (slip > 8 && k.sp > 20 ? .09 : 0)));
+  const cap = MAXSP * (bo ? 1.45 : (off ? .5 : 1)) * (k.kick > 0 ? 1.2 : 1); if (k.kick > 0) k.sp += 55 * dt;
+  if (inp.thr) k.sp += (bo ? 75 : 26) * dt;
+  else if (inp.brk) k.sp -= (k.sp > 0 ? 65 : 22) * dt;
+  else k.sp -= Math.sign(k.sp) * Math.min(Math.abs(k.sp), 8 * dt);
+  if (bo && !inp.thr) k.sp += 40 * dt;
+  if (k.sp > cap) k.sp = Math.max(cap, k.sp - (off ? 60 : 35) * dt);
+  if (k.sp < -14) k.sp = -14;
+  const as = Math.abs(k.sp), sf = Math.min(1, as / 9) * (1 - .42 * Math.min(1, as / MAXSP));
+  let st = inp.steer;
+  if (inp.drift && k.sp > 16 && (k.drift || st)) { if (!k.drift) { k.drift = st > 0 ? 1 : -1; k.dtm = 0; } k.dtm += dt; st = clamp(k.drift * .9 + st * .55, -1.4, 1.4); }
+  else if (k.drift) { if (k.dtm > .8) { k.gauge = Math.min(1, k.gauge + Math.min(.5, k.dtm * .2)); k.kick = .6; } k.drift = 0; k.dtm = 0; }
+  if (k.kick > 0) k.kick -= dt;
+  k.a += st * 2.7 * (k.drift ? 1.2 : 1) * sf * (k.sp < 0 ? -1 : 1) * dt;
+  const gx = Math.sin(k.a), gz = Math.cos(k.a), g = Math.min(1, (k.drift ? 2.1 : 5.5) * dt);
+  k.vx += (gx * k.sp - k.vx) * g; k.vz += (gz * k.sp - k.vz) * g;
+  k.x += k.vx * dt; k.z += k.vz * dt;
+  k.idx = locate(k.x, k.z, k.idx);
+  // wall
+  i = k.idx;
+  const l2 = (k.x - tr.cx[i]) * tr.nx[i] + (k.z - tr.cz[i]) * tr.nz[i], lim = tr.hw + 3.4;
+  if (Math.abs(l2) > lim) {
+    const s = Math.sign(l2), ex = Math.abs(l2) - lim; k.x -= tr.nx[i] * s * ex; k.z -= tr.nz[i] * s * ex;
+    const vn = (k.vx * tr.nx[i] + k.vz * tr.nz[i]) * s;
+    if (vn > 0) { k.vx -= tr.nx[i] * s * vn * 1.5; k.vz -= tr.nz[i] * s * vn * 1.5; }
+    k.sp *= .96;
+  }
+  // kart bump
+  for (const o of G.karts) {
+    if (o === k || o.gone) continue;
+    const dx = k.x - o.x, dz = k.z - o.z, d2 = dx * dx + dz * dz;
+    if (d2 < 10.24 && d2 > 1e-4) { const d = Math.sqrt(d2), ov = (3.2 - d) * .5, nx = dx / d, nz = dz / d; k.x += nx * ov; k.z += nz * ov; k.vx += nx * ov * 6; k.vz += nz * ov * 6; k.sp *= .993; }
+  }
+  // progress
+  let d = k.idx - k.lidx; if (d < -N / 2) d += N; else if (d > N / 2) d -= N;
+  k.tot += d; k.lidx = k.idx;
+  if (!k.fin && k.tot >= G.laps * N) { k.fin = Math.max(.01, G.raceT); if (!k.bot) { k.auto = true; onMeFinish(); } }
+}
+function stepRemote(k, dt, now) {
+  const age = Math.min(.25, (now - k.last) / 1000), ex = k.tx + k.tvx * age, ez = k.tz + k.tvz * age;
+  if (Math.hypot(ex - k.x, ez - k.z) > 40) { k.x = ex; k.z = ez; }
+  const g = Math.min(1, dt * 14); k.x += (ex - k.x) * g; k.z += (ez - k.z) * g; k.a += wrap(k.ta - k.a) * g;
+  if (now - k.last > 5000 && G.state === 'race') k.gone = true;
+}
+const score = k => k.fin ? 1e9 - k.fin : k.tot;
+function ranked() { return G.karts.filter(k => !k.gone).sort((a, b) => score(b) - score(a)); }
+
+/* ---------------------------------------------------------------- race flow */
+function startRace(mapId, list, mode) {
+  loadMap(mapId); G.mode = mode; G.karts = []; G.me = null;
+  const tr = G.tr, N = tr.N;
+  list.forEach((e, slot) => {
+    const row = slot >> 1, side = (slot & 1) ? 1 : -1, idx = (N - 3 - row * 2 + N) % N;
+    const x = tr.cx[idx] + tr.nx[idx] * side * 3.4, z = tr.cz[idx] + tr.nz[idx] * side * 3.4;
+    const k = { id: e.id, name: e.name, color: e.color, local: !!e.local, bot: !!e.bot, x, z, a: Math.atan2(tr.tx[idx], tr.tz[idx]), vx: 0, vz: 0, sp: 0, gauge: .3, boosting: false, drift: 0, dtm: 0, kick: 0, vyaw: 0, idx, lidx: idx, tot: idx - N, fin: 0, auto: false, off: (Math.random() - .5) * 10, skill: .84 + Math.random() * .13, tx: x, tz: z, ta: 0, tvx: 0, tvz: 0, last: performance.now(), gone: false };
+    G.karts.push(k); if (k.local && !k.bot) G.me = k;
+  });
+  G.state = 'count'; G.t0 = performance.now() + 4000; G.raceT = 0; G.camA = G.me.a; G.hint = performance.now() + 9000; G.wrongT = 0;
+  crowdOn(true); hideAll();
+}
+function startSolo() {
+  const s = G.solo, bots = s.bots, used = new Set([ME.color]), list = [];
+  for (let b = 0; b < bots; b++) { let c; do { c = Math.random() * KC.length | 0; } while (used.has(c) && used.size < KC.length); used.add(c); list.push({ id: 'b' + b, name: BOTN[b % BOTN.length], color: c, local: true, bot: true }); }
+  list.push({ id: 'me', name: ME.name, color: ME.color, local: true });
+  G.laps = s.laps; startRace(s.map, list, 'solo');
+}
+function onMeFinish() { G.resultOn = true; $('#bAgain').style.display = G.mode === 'solo' ? '' : 'none'; showSec('s-result'); updateResult(); }
+function fmt(t) { const m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2); }
+function updateResult() {
+  if (!G.resultOn) return;
+  const el = $('#resList'); el.innerHTML = '';
+  ranked().forEach((k, i) => {
+    const d = document.createElement('div'); d.className = 'item';
+    d.innerHTML = `<span><span class="dot" style="background:#${hex(KC[k.color])}"></span>${i + 1}. ${esc(k.name)}${k === G.me ? ' (나)' : ''}</span><span class="tag ${k.fin ? 'ok' : ''}">${k.fin ? fmt(k.fin) : '주행 중'}</span>`;
+    el.appendChild(d);
+  });
+}
+setInterval(updateResult, 400);
+function exitRace() {
+  if (G.state === 'idle') return;
+  crowdOn(false); G.state = 'idle'; G.resultOn = false; G.karts = []; G.me = null;
+  loadMap(G.map);
+  if (G.mode === 'multi' && NET.active) backToRoom(); else showSec('s-menu');
+}
+$('#bAgain').onclick = () => { G.resultOn = false; startSolo(); };
+$('#bBack').onclick = exitRace;
+
+/* ---------------------------------------------------------------- loop / render */
+let lastT = performance.now(), VP = I4, W = 0, H = 0;
+let RS = .85, fa = .017, fc = 0, EYE = [0, 0, 0];
+function resize() {
+  const dpr = Math.min(1.5, devicePixelRatio || 1); W = innerWidth; H = innerHeight;
+  cv.width = Math.round(W * dpr * RS); cv.height = Math.round(H * dpr * RS); hud.width = Math.round(W * dpr); hud.height = Math.round(H * dpr);
+  gl.viewport(0, 0, cv.width, cv.height); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+const ENVc = new Map();
+function ENVI(def) {
+  let e = ENVc.get(def); if (e) return e;
+  const night = def.deco === 'city', des = def.deco === 'cactus', L0 = night ? [-.3, .5, -.4] : des ? [.7, .32, .4] : [.45, .75, .35], l = Math.hypot(...L0), lin = c => c.map(v => Math.pow(v, 2.2));
+  e = { night, L: L0.map(v => v / l), sunC: night ? [.9, .8, 1.8] : des ? [1.6, 1.05, .6] : def.snow ? [1.35, 1.3, 1.25] : [1.45, 1.32, 1.1], sky: night ? [.07, .07, .2] : lin(C(def.sky[0])).map(v => v * 1.15 + .1), gnd: night ? [.03, .03, .07] : lin(C(def.ground[0])).map(v => v * .5) };
+  ENVc.set(def, e); return e;
+}
+addEventListener('resize', resize); resize();
+
+function update(dt, now) {
+  if (G.state === 'count') { if (now >= G.t0) { G.state = 'race'; } }
+  if (G.state === 'race') {
+    G.raceT = (now - G.t0) / 1000; crowdUpdate(now);
+    for (const k of G.karts) { if (k.gone) continue; if (k.local) stepKart(k, dt); else stepRemote(k, dt, now); }
+    if (G.mode === 'multi' && G.me && now - G.lastSend > 50) {
+      G.lastSend = now; const m = G.me;
+      netSendU(JSON.stringify({ t: 's', x: r2(m.x), z: r2(m.z), a: r2(m.a), vx: r2(m.vx), vz: r2(m.vz), b: m.boosting ? 1 : 0, d: dLevel(m), tt: Math.round(m.tot), f: m.fin }));
+    }
+    const m = G.me;
+    if (m) { const tr = G.tr, i = m.idx; G.wrongT = (m.vx * tr.tx[i] + m.vz * tr.tz[i] < -5) ? G.wrongT + dt : 0; }
+  } else if (G.state === 'count') {
+    for (const k of G.karts) if (!k.local) stepRemote(k, dt, now);
+  }
+}
+
+function render(now, dt) {
+  const w = G.world, def = w.def, fog = C(def.sky[1]);
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+  let eye, ctr, fov = 1.05;
+  const me = G.me;
+  if (G.state !== 'idle' && me) {
+    G.camA += wrap(me.a - G.camA) * Math.min(1, dt * 4.5);
+    const dist = me.boosting ? 11 : 9, ca = G.camA;
+    eye = [me.x - Math.sin(ca) * dist, 4.4, me.z - Math.cos(ca) * dist];
+    ctr = [me.x + Math.sin(me.a) * 5, 1.7, me.z + Math.cos(me.a) * 5];
+    fov = 1.05 + (me.boosting ? .18 : 0) + Math.min(.12, Math.abs(me.sp) / MAXSP * .1);
+  } else {
+    const a = now / 9000, m = w.mm, cx = (m.x0 + m.x1) / 2, cz = (m.z0 + m.z1) / 2;
+    eye = [cx + Math.cos(a) * 520, 190, cz + Math.sin(a) * 520]; ctr = [cx, 0, cz];
+  }
+  VP = mul(perspective(fov, W / H, .8, 3500), lookAt(eye, ctr, [0, 1, 0]));
+  EYE = eye; const e = ENVI(def), L = e.L;
+  gl.uniformMatrix4fv(uVP, false, VP); gl.uniform3fv(uCam, eye); gl.uniform3fv(uFog, fog); gl.uniform2f(uFogR, 440, 1100);
+  gl.uniform3fv(uSun, L); gl.uniform3fv(uSunC, e.sunC); gl.uniform3fv(uSky, e.sky); gl.uniform3fv(uGnd, e.gnd); gl.uniform1f(uNight, e.night ? 1 : 0);
+  gl.uniform1f(uSh, 0); gl.uniform1f(uMat, 0); drawMesh(w.mesh, I4);
+  w.crowd.forEach((m, q) => drawMesh(m, modelY(0, Math.abs(Math.sin(now / 170 + q * 1.6)) * .3, 0, 0)));
+  gl.uniform1f(uMat, 1); const ms = [];
+  for (const k of G.karts) {
+    if (k.gone) continue;
+    k.vyaw = (k.vyaw || 0) + ((k.drift || 0) * .3 - (k.vyaw || 0)) * Math.min(1, dt * 10);
+    const M = modelY(k.x, 0, k.z, k.a + k.vyaw); ms.push([k, M]); drawMesh(kartMesh(k.color), M);
+  }
+  const SM = [1, 0, 0, 0, -L[0] / L[1], 0, -L[2] / L[1], 0, 0, 0, 1, 0, 0, .16, 0, 1];
+  gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE); gl.depthMask(false);
+  gl.enable(gl.STENCIL_TEST); gl.stencilFunc(gl.EQUAL, 0, 255); gl.stencilOp(gl.KEEP, gl.KEEP, gl.INCR);
+  gl.uniform1f(uSh, 1); for (const [k, M] of ms) drawMesh(kartMesh(k.color), mul(SM, M));
+  gl.uniform1f(uSh, 0); gl.disable(gl.STENCIL_TEST); gl.depthMask(true); gl.uniform1f(uMat, 2);
+  for (const [k, M] of ms) { if (k.boosting) drawMesh(getFlame(), M); const lv = dLevel(k); if (lv && ((now / 70 | 0) & 1)) drawMesh(sparkMesh(lv - 1), M); }
+  gl.disable(gl.BLEND);
+  drawHud(now);
+}
+
+function proj(x, y, z) {
+  const cx = VP[0] * x + VP[4] * y + VP[8] * z + VP[12], cy = VP[1] * x + VP[5] * y + VP[9] * z + VP[13], cw = VP[3] * x + VP[7] * y + VP[11] * z + VP[15];
+  if (cw <= .1) return null; return [(cx / cw * .5 + .5) * W, (1 - (cy / cw * .5 + .5)) * H];
+}
+function drawHud(now) {
+  ctx.clearRect(0, 0, W, H);
+  if (VOICE.on && NET.active) { ctx.font = '800 14px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ff5a5a'; ctx.fillText('🎙 마이크 ON (M)', W / 2, 24); }
+  if (G.state === 'idle' || !G.me) return;
+  const me = G.me, tr = G.tr, N = tr.N;
+  { // post fx: sun bloom, vignette, boost speed lines
+    const df = G.world.def, e = ENVI(df);
+    if (!e.night) { const p = proj(EYE[0] + e.L[0] * 900, EYE[1] + e.L[1] * 900, EYE[2] + e.L[2] * 900); if (p) { ctx.globalCompositeOperation = 'lighter'; const r = Math.max(W, H) * .45, g = ctx.createRadialGradient(p[0], p[1], 0, p[0], p[1], r); g.addColorStop(0, 'rgba(255,240,200,.55)'); g.addColorStop(.12, 'rgba(255,220,160,.2)'); g.addColorStop(1, 'rgba(255,200,120,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'source-over'; } }
+    const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * .45, W / 2, H / 2, Math.max(W, H) * .75); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.4)'); ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+    if (me.boosting) { const m = Math.min(W, H); ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.lineWidth = 2; ctx.beginPath(); for (let i = 0; i < 22; i++) { const a = Math.random() * 6.283, r0 = m * (.3 + Math.random() * .15), r1 = r0 + m * (.15 + Math.random() * .25); ctx.moveTo(W / 2 + Math.cos(a) * r0, H / 2 + Math.sin(a) * r0); ctx.lineTo(W / 2 + Math.cos(a) * r1, H / 2 + Math.sin(a) * r1); } ctx.stroke(); }
+  }
+  ctx.textBaseline = 'alphabetic';
+  // name tags
+  ctx.font = '700 13px sans-serif'; ctx.textAlign = 'center';
+  for (const k of G.karts) {
+    if (k === me || k.gone) continue; const p = proj(k.x, 3.6, k.z); if (!p) continue;
+    const d = Math.hypot(k.x - me.x, k.z - me.z); if (d > 160) continue;
+    ctx.fillStyle = 'rgba(0,0,0,.55)'; const tw = ctx.measureText(k.name).width + 12; ctx.fillRect(p[0] - tw / 2, p[1] - 14, tw, 18);
+    ctx.fillStyle = '#' + hex(KC[k.color]); ctx.fillText(k.name, p[0], p[1]);
+  }
+  // rank / lap
+  const rk = ranked(), pos = rk.indexOf(me) + 1, lap = clamp(Math.floor(Math.max(0, me.tot) / N) + 1, 1, G.laps);
+  ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 5; ctx.lineJoin = 'round';
+  ctx.font = 'italic 900 64px sans-serif'; const ps = pos + '', pw = ctx.measureText(ps).width;
+  ctx.strokeText(ps, 22, 76); ctx.fillText(ps, 22, 76);
+  ctx.font = 'italic 800 24px sans-serif'; ctx.strokeText('/ ' + rk.length, 30 + pw, 76); ctx.fillText('/ ' + rk.length, 30 + pw, 76);
+  ctx.font = '800 22px sans-serif'; const lt = `LAP ${lap}/${G.laps}`; ctx.strokeText(lt, 22, 108); ctx.fillText(lt, 22, 108);
+  const tt = fmt(Math.max(0, G.raceT)); ctx.font = '700 18px sans-serif'; ctx.strokeText(tt, 22, 134); ctx.fillText(tt, 22, 134);
+  // speed
+  ctx.textAlign = 'right'; ctx.font = 'italic 900 44px sans-serif'; const sp = Math.round(Math.abs(me.sp) * 3.6) + '';
+  ctx.strokeText(sp, W - 70, H - 64); ctx.fillText(sp, W - 70, H - 64);
+  ctx.font = '700 15px sans-serif'; ctx.strokeText('km/h', W - 22, H - 64); ctx.fillText('km/h', W - 22, H - 64);
+  // boost gauge
+  const gw = Math.min(320, W * .5), gx = W / 2 - gw / 2, gy = H - 38;
+  ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(gx - 3, gy - 3, gw + 6, 20);
+  ctx.fillStyle = me.boosting ? '#ffec6b' : (me.gauge > .98 ? '#7dff9a' : '#35a7ff'); ctx.fillRect(gx, gy, gw * me.gauge, 14);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '700 12px sans-serif'; ctx.fillText(me.gauge > .98 ? 'BOOST READY — CTRL' : 'BOOST', W / 2, gy - 8);
+  const dl = dLevel(me); if (dl) { ctx.textAlign = 'center'; ctx.font = 'italic 900 30px sans-serif'; ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.fillStyle = ['#4fc3ff', '#ffa21f', '#ff3df2'][dl - 1]; const t = 'DRIFT ' + '»'.repeat(dl); ctx.strokeText(t, W / 2, H * .62); ctx.fillText(t, W / 2, H * .62); }
+  // minimap
+  const mm = G.world.mm, S = 150, sc = Math.min(S / (mm.x1 - mm.x0), S / (mm.z1 - mm.z0)), ox = W - S - 18, oy = 18;
+  const mx = x => ox + (mm.x1 - x) * sc, my = z => oy + (mm.z1 - z) * sc;
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(ox - 8, oy - 8, S + 16, S + 16);
+  ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 3; ctx.beginPath();
+  for (let i = 0; i <= N; i += 3) { const j = i % N; if (i === 0) ctx.moveTo(mx(tr.cx[j]), my(tr.cz[j])); else ctx.lineTo(mx(tr.cx[j]), my(tr.cz[j])); }
+  ctx.closePath(); ctx.stroke();
+  for (const k of G.karts) { if (k.gone) continue; ctx.fillStyle = '#' + hex(KC[k.color]); ctx.beginPath(); ctx.arc(mx(k.x), my(k.z), k === me ? 5 : 3.5, 0, 7); ctx.fill(); if (k === me) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); } }
+  // countdown / messages
+  ctx.textAlign = 'center'; ctx.lineWidth = 8;
+  if (G.state === 'count') {
+    const rem = (G.t0 - now) / 1000; const txt = rem > 3 ? '준비!' : Math.ceil(rem) + '';
+    ctx.font = 'italic 900 120px sans-serif'; ctx.fillStyle = '#ffd23f'; ctx.strokeText(txt, W / 2, H * .38); ctx.fillText(txt, W / 2, H * .38);
+  } else if (G.raceT < 1.2) {
+    ctx.font = 'italic 900 120px sans-serif'; ctx.fillStyle = '#7dff9a'; ctx.strokeText('GO!', W / 2, H * .38); ctx.fillText('GO!', W / 2, H * .38);
+  }
+  if (G.wrongT > .8) { ctx.font = '900 40px sans-serif'; ctx.fillStyle = '#ff5252'; ctx.strokeText('⚠ 역주행!', W / 2, H * .3); ctx.fillText('⚠ 역주행!', W / 2, H * .3); }
+  if (me.fin && !G.resultOn) { ctx.font = '900 40px sans-serif'; ctx.fillStyle = '#fff'; ctx.strokeText('FINISH!', W / 2, H * .3); ctx.fillText('FINISH!', W / 2, H * .3); }
+  if (now < G.hint) { ctx.font = '600 14px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 4; const h = '방향키 이동 · Ctrl 부스트 · Shift 드리프트 · M 마이크 · R 복귀 · Esc 나가기'; ctx.strokeText(h, W / 2, H - 70); ctx.fillText(h, W / 2, H - 70); }
+}
+
+function loop(now) {
+  requestAnimationFrame(loop);
+  const dt = Math.min(.05, (now - lastT) / 1000); lastT = now;
+  update(dt, now); render(now, dt);
+  fa = fa * .96 + dt * .04;
+  if (++fc % 90 === 0) { if (fa > .024 && RS > .5) { RS = Math.max(.5, RS - .1); resize(); } else if (fa < .0178 && RS < 1) { RS = Math.min(1, RS + .05); resize(); } }
+}
+
+/* ---------------------------------------------------------------- UI */
+let ME = { name: '레이서' + (10 + Math.random() * 89 | 0), color: Math.random() * KC.length | 0 };
+try { const s = JSON.parse(localStorage.getItem('kartME') || 'null'); if (s) ME = Object.assign(ME, s); } catch (e) { }
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function saveME() { ME.name = ($('#name').value.trim() || ME.name).slice(0, 10); try { localStorage.setItem('kartME', JSON.stringify(ME)); } catch (e) { } }
+function showSec(id) { document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === id)); }
+function hideAll() { document.querySelectorAll('section').forEach(s => s.classList.remove('on')); }
+function mapPicker(el, get, set) {
+  el.innerHTML = '';
+  MAPS.forEach((m, i) => {
+    const b = document.createElement('button'); b.className = 'mp' + (get() === i ? ' sel' : '');
+    b.style.background = `linear-gradient(135deg,#${hex(m.sky[0])},#${hex(m.ground[0])})`;
+    b.innerHTML = `<b>${m.name}</b><small>${m.desc}</small>`; b.onclick = () => { set(i); mapPicker(el, get, set); }; el.appendChild(b);
+  });
+}
+function colorPicker() {
+  const el = $('#colors'); el.innerHTML = '';
+  KC.forEach((c, i) => { const s = document.createElement('i'); s.style.background = '#' + hex(c); if (i === ME.color) s.className = 'sel'; s.onclick = () => { ME.color = i; saveME(); colorPicker(); }; el.appendChild(s); });
+}
+$('#name').value = ME.name; colorPicker();
+$('#name').onchange = saveME;
+document.querySelectorAll('[data-back]').forEach(b => b.onclick = () => { if (NET.active) leaveRoom(); showSec('s-menu'); });
+
+G.solo = { map: 0, bots: 5, laps: 3 };
+$('#bSolo').onclick = () => { saveME(); mapPicker($('#soloMaps'), () => G.solo.map, v => { G.solo.map = v; loadMap(v); }); showSec('s-solo'); };
+$('#bSoloGo').onclick = () => { G.solo.bots = +$('#botN').value; G.solo.laps = +$('#lapN').value; startSolo(); };
+
+/* ---------------------------------------------------------------- Firestore REST */
+async function fs(method, path, body, qs = '') {
+  const r = await fetch(`${BASE}/${path}?key=${KEY}${qs}`, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 404) return null;
+  if (!r.ok) { let m = r.status + ''; try { m = (await r.json()).error.message; } catch (e) { } throw new Error(m); }
+  return method === 'DELETE' ? {} : r.json();
+}
+const enc = o => ({ fields: Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'number' ? { integerValue: String(Math.round(v)) } : { stringValue: String(v) }])) });
+const dec = d => { const o = { id: d.name.split('/').pop() }; for (const [k, v] of Object.entries(d.fields || {})) o[k] = v.integerValue !== undefined ? Number(v.integerValue) : v.stringValue; return o; };
+const errMsg = e => `Firestore 연결 실패: ${e.message}. (보안 규칙에서 kartRooms 컬렉션 읽기/쓰기를 허용해야 해요)`;
+
+/* ---------------------------------------------------------------- NET (lobby + WebRTC mesh) */
+const NET = { pid: rid(), room: null, host: false, peers: {}, players: [], active: false, paused: false, mapId: 0, roomName: '', timers: [], seen: new Set(), polling: false, grace: 0, nextPoll: 0, pollT: null };
+const ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }] };
+const STALE = 30000;
+const fresh = p => p.id === NET.pid || Date.now() < NET.grace || Date.now() - p.t < STALE;
+
+async function listRooms() {
+  const r = await fs('GET', 'kartRooms', null, '&pageSize=100'), now = Date.now();
+  return ((r && r.documents) || []).map(dec).filter(x => x.state === 'waiting' && now - x.t < STALE);
+}
+async function refreshRooms() {
+  const el = $('#roomList'), msg = $('#roomsMsg'); msg.textContent = '';
+  try {
+    const rooms = await listRooms(); el.innerHTML = '';
+    if (!rooms.length) el.innerHTML = '<div class="item" style="color:#9aa3c7">열려 있는 방이 없어요. 새 방을 만들어보세요!</div>';
+    rooms.forEach(r => {
+      const d = document.createElement('div'); d.className = 'item';
+      d.innerHTML = `<span>${esc(r.name)} <span class="tag">${esc((MAPS[r.map] || MAPS[0]).name)}</span></span><span><span class="tag">${r.n}/10</span> <button class="btn" style="flex:none;min-width:0;padding:6px 14px;margin-left:6px" ${r.n >= 10 ? 'disabled' : ''}>참가</button></span>`;
+      d.querySelector('button').onclick = () => joinRoom(r.id); el.appendChild(d);
+    });
+  } catch (e) { msg.textContent = errMsg(e); }
+}
+let roomMap = 0;
+$('#bMulti').onclick = () => { saveME(); mapPicker($('#roomMaps'), () => roomMap, v => { roomMap = v; loadMap(v); }); showSec('s-rooms'); refreshRooms(); };
+$('#bRefresh').onclick = refreshRooms;
+$('#bCreate').onclick = () => createRoom(roomMap);
+$('#bQuick').onclick = async () => {
+  $('#roomsMsg').textContent = '매칭 중...';
+  try { const rooms = (await listRooms()).filter(r => r.n < 10).sort((a, b) => b.n - a.n); if (rooms.length) await joinRoom(rooms[0].id); else await createRoom(roomMap); }
+  catch (e) { $('#roomsMsg').textContent = errMsg(e); }
+};
+
+async function putPlayer() { await fs('PATCH', `kartRooms/${NET.room}/players/${NET.pid}`, enc({ name: ME.name, color: ME.color, t: Date.now() })); }
+async function putRoom(state) { await fs('PATCH', `kartRooms/${NET.room}`, enc({ name: NET.roomName, host: NET.pid, map: NET.mapId, state: state || 'waiting', n: Math.max(1, NET.players.length), t: Date.now() })); }
+async function getPlayers(id) { const r = await fs('GET', `kartRooms/${id}/players`, null, '&pageSize=50'); return ((r && r.documents) || []).map(dec).filter(p => Date.now() - p.t < STALE); }
+
+async function createRoom(mapId) {
+  saveME(); if (NET.active) leaveRoom();
+  try {
+    NET.room = 'r' + rid(); NET.host = true; NET.mapId = mapId; NET.roomName = `${ME.name}의 방`; NET.players = [{ id: NET.pid, name: ME.name, color: ME.color, t: Date.now() }];
+    await putRoom('waiting'); await putPlayer(); startNet();
+  } catch (e) { NET.room = null; $('#roomsMsg').textContent = errMsg(e); }
+}
+async function joinRoom(id) {
+  saveME(); if (NET.active) leaveRoom();
+  try {
+    const rd = await fs('GET', `kartRooms/${id}`); if (!rd) throw new Error('방이 사라졌어요');
+    const room = dec(rd); if (room.state !== 'waiting') throw new Error('이미 게임이 시작된 방이에요');
+    const ps = await getPlayers(id); if (ps.length >= 10) throw new Error('방이 가득 찼어요 (10/10)');
+    NET.room = id; NET.host = false; NET.mapId = room.map; NET.roomName = room.name; NET.players = ps;
+    await putPlayer(); startNet();
+  } catch (e) { NET.room = null; $('#roomsMsg').textContent = /Firestore|permission|PERMISSION/i.test(e.message) ? errMsg(e) : e.message; }
+}
+function startNet() {
+  NET.active = true; NET.paused = false; NET.seen = new Set(); NET.grace = Date.now() + 12000; G.mode = 'multi';
+  loadMap(NET.mapId); showSec('s-room'); renderRoom();
+  NET.timers.push(setInterval(() => { if (!NET.active) return; if (NET.paused && !NET.host) return; putPlayer().catch(() => { }); if (NET.host) putRoom(NET.paused ? 'racing' : 'waiting').catch(() => { }); }, 8000));
+  schedulePoll(300);
+}
+function schedulePoll(ms) { clearTimeout(NET.pollT); NET.pollT = setTimeout(poll, ms); }
+function leaveRoom(silent) {
+  if (!NET.active && !NET.room) return;
+  const room = NET.room, host = NET.host;
+  NET.active = false; NET.timers.forEach(clearInterval); NET.timers = []; clearTimeout(NET.pollT);
+  Object.keys(NET.peers).forEach(closePeer);
+  if (room) { fs('DELETE', `kartRooms/${room}/players/${NET.pid}`).catch(() => { }); if (host) fs('DELETE', `kartRooms/${room}`).catch(() => { }); }
+  NET.room = null; NET.players = []; if (G.mode === 'multi') G.mode = 'solo';
+}
+addEventListener('beforeunload', () => {
+  if (NET.room) { const o = { method: 'DELETE', keepalive: true }; fetch(`${BASE}/kartRooms/${NET.room}/players/${NET.pid}?key=${KEY}`, o); if (NET.host) fetch(`${BASE}/kartRooms/${NET.room}?key=${KEY}`, o); }
+});
+$('#bLeave').onclick = () => { leaveRoom(); showSec('s-rooms'); refreshRooms(); };
+
+async function querySignals() {
+  const r = await fetch(`${BASE}/kartRooms/${NET.room}:runQuery?key=${KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ structuredQuery: { from: [{ collectionId: 'signals' }], where: { fieldFilter: { field: { fieldPath: 'to' }, op: 'EQUAL', value: { stringValue: NET.pid } } } } }) });
+  if (!r.ok) throw new Error('signal ' + r.status);
+  return (await r.json()).filter(x => x.document).map(x => dec(x.document));
+}
+async function poll() {
+  if (!NET.active || NET.paused || NET.polling) { if (NET.active) schedulePoll(2000); return; }
+  NET.polling = true; let connecting = false;
+  try {
+    const [rd, pl, sg] = await Promise.all([fs('GET', `kartRooms/${NET.room}`), fs('GET', `kartRooms/${NET.room}/players`, null, '&pageSize=50'), querySignals()]);
+    if (!NET.active) return;
+    if (!rd && !NET.host) { leaveRoom(); showSec('s-rooms'); refreshRooms(); $('#roomsMsg').textContent = '방장이 방을 닫았어요.'; return; }
+    if (rd && !NET.host) { const room = dec(rd); NET.mapId = room.map; NET.roomName = room.name; }
+    NET.players = ((pl && pl.documents) || []).map(dec).filter(fresh);
+    if (!NET.players.find(p => p.id === NET.pid)) NET.players.push({ id: NET.pid, name: ME.name, color: ME.color, t: Date.now() });
+    for (const s of sg) {
+      if (NET.seen.has(s.id)) continue; NET.seen.add(s.id);
+      fs('DELETE', `kartRooms/${NET.room}/signals/${s.id}`).catch(() => { });
+      if (Date.now() - s.t < 60000) handleSig(s);
+    }
+    const ids = NET.players.map(p => p.id).filter(i => i !== NET.pid);
+    for (const q of ids) {
+      const P = NET.peers[q];
+      if (!P) { if (NET.pid < q) initiate(q); }
+      else if (!P.open && Date.now() - P.t > 20000) { closePeer(q); if (NET.pid < q) initiate(q); }
+    }
+    for (const q of Object.keys(NET.peers)) if (!ids.includes(q)) closePeer(q);
+    connecting = ids.some(q => !NET.peers[q] || !NET.peers[q].open);
+    $('#roomMsg').textContent = '';
+    renderRoom();
+  } catch (e) { $('#roomMsg').textContent = errMsg(e); }
+  finally { NET.polling = false; if (NET.active) schedulePoll(connecting ? 1500 : 10000); }
+}
+
+function renderRoom() {
+  if (!NET.active) return;
+  $('#roomTitle').textContent = '대기실 · ' + NET.roomName;
+  mapPicker($('#lobbyMaps'), () => NET.mapId, v => { if (!NET.host) return; NET.mapId = v; loadMap(v); putRoom('waiting').catch(() => { }); netSendC(JSON.stringify({ t: 'map', m: v })); });
+  $('#mapHint').textContent = NET.host ? '(방장만 변경 가능)' : '(방장이 선택)';
+  loadMap(NET.mapId);
+  const el = $('#playerList'); el.innerHTML = '';
+  const list = NET.players.slice().sort((a, b) => a.id < b.id ? -1 : 1);
+  list.forEach(p => {
+    const me = p.id === NET.pid, P = NET.peers[p.id], ok = me || (P && P.open);
+    const d = document.createElement('div'); d.className = 'item';
+    d.innerHTML = `<span><span class="dot" style="background:#${hex(KC[p.color % KC.length])}"></span>${esc(p.name)}${me ? ' (나)' : ''}${p.id === hostId() ? ' 👑' : ''}</span><span class="tag ${ok ? 'ok' : ''}">${me ? '준비됨' : ok ? 'P2P 연결됨' : '연결 중...'}</span>`;
+    el.appendChild(d);
+  });
+  const conn = Object.values(NET.peers).filter(p => p.open).length;
+  const b = $('#bStart'); b.style.display = NET.host ? '' : 'none'; b.disabled = conn < 1;
+  b.textContent = conn < 1 ? '다른 플레이어를 기다리는 중 (최소 2명)' : `게임 시작 (${conn + 1}명)`;
+  if (!NET.host) $('#roomMsg').textContent = $('#roomMsg').textContent || '방장이 시작하면 자동으로 레이스가 시작돼요.';
+}
+function hostId() { return NET.host ? NET.pid : null; }
+$('#bStart').onclick = () => {
+  if (!NET.host) return;
+  const order = [NET.pid, ...Object.values(NET.peers).filter(p => p.open).map(p => p.q).sort()];
+  const info = {}; NET.players.forEach(p => info[p.id] = p);
+  const msg = { t: 'go', m: NET.mapId, o: order.map(id => ({ id, n: (info[id] || {}).name || '???', c: (info[id] || {}).color || 0 })), laps: 3 };
+  netSendC(JSON.stringify(msg)); NET.paused = true; putRoom('racing').catch(() => { });
+  beginMulti(msg);
+};
+function beginMulti(msg) {
+  if (G.state !== 'idle') return;
+  NET.paused = true; G.laps = msg.laps || 3;
+  const list = msg.o.map(e => ({ id: e.id, name: e.n, color: e.c % KC.length, local: e.id === NET.pid }));
+  startRace(msg.m, list, 'multi');
+}
+function backToRoom() {
+  NET.paused = false; NET.grace = Date.now() + 12000; showSec('s-room');
+  putPlayer().catch(() => { }); if (NET.host) putRoom('waiting').catch(() => { });
+  renderRoom(); schedulePoll(500);
+}
+
+/* WebRTC */
+function gathered(pc) {
+  return new Promise(res => {
+    if (pc.iceGatheringState === 'complete') return res();
+    const f = () => { if (pc.iceGatheringState === 'complete') { pc.removeEventListener('icegatheringstatechange', f); res(); } };
+    pc.addEventListener('icegatheringstatechange', f); setTimeout(res, 4000);
+  });
+}
+function newPeer(q, init) {
+  const pc = new RTCPeerConnection(ICE), P = { q, pc, c: null, u: null, open: false, t: Date.now(), dead: false, was: false, as: null, au: null };
+  pc.ontrack = e => { const a = document.createElement('audio'); a.autoplay = true; a.srcObject = new MediaStream([e.track]); document.body.appendChild(a); P.au = a; a.play().catch(() => { }); };
+  const chk = () => {
+    if (P.dead) return;
+    const o = !!(P.c && P.u && P.c.readyState === 'open' && P.u.readyState === 'open');
+    if (o !== P.open) { P.open = o; if (o) P.was = true; else if (P.was) { peerGone(q); return; } renderRoom(); }
+  };
+  const hook = ch => { ch.onopen = chk; ch.onclose = chk; ch.onmessage = e => onMsg(q, e.data); if (ch.label === 'c') P.c = ch; else P.u = ch; chk(); };
+  if (init) { P.as = pc.addTransceiver('audio', { direction: 'sendrecv' }).sender; if (VOICE.track) P.as.replaceTrack(VOICE.track).catch(() => { }); hook(pc.createDataChannel('c')); hook(pc.createDataChannel('u', { ordered: false, maxRetransmits: 0 })); }
+  else pc.ondatachannel = e => hook(e.channel);
+  pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed' || pc.connectionState === 'closed') chk(); };
+  return P;
+}
+function closePeer(q) { const P = NET.peers[q]; if (!P) return; delete NET.peers[q]; P.dead = true; if (P.au) P.au.remove(); try { P.pc.close(); } catch (e) { } }
+function peerGone(q) { closePeer(q); const k = G.karts.find(x => x.id === q); if (k) k.gone = true; renderRoom(); }
+async function sendSig(to, type, sdp) { await fs('POST', `kartRooms/${NET.room}/signals`, enc({ from: NET.pid, to, type, sdp, t: Date.now() })); }
+async function initiate(q) {
+  const P = newPeer(q, true); NET.peers[q] = P;
+  try { const o = await P.pc.createOffer(); await P.pc.setLocalDescription(o); await gathered(P.pc); await sendSig(q, 'offer', JSON.stringify(P.pc.localDescription)); } catch (e) { console.warn(e); }
+}
+async function handleSig(s) {
+  const q = s.from;
+  try {
+    if (s.type === 'offer') {
+      closePeer(q); const P = newPeer(q, false); NET.peers[q] = P;
+      await P.pc.setRemoteDescription(JSON.parse(s.sdp)); for (const t of P.pc.getTransceivers()) if (t.receiver.track && t.receiver.track.kind === 'audio') { t.direction = 'sendrecv'; P.as = t.sender; if (VOICE.track) t.sender.replaceTrack(VOICE.track).catch(() => { }); } const a = await P.pc.createAnswer(); await P.pc.setLocalDescription(a); await gathered(P.pc);
+      await sendSig(q, 'answer', JSON.stringify(P.pc.localDescription));
+    } else if (s.type === 'answer') {
+      const P = NET.peers[q]; if (P && P.pc.signalingState === 'have-local-offer') await P.pc.setRemoteDescription(JSON.parse(s.sdp));
+    }
+  } catch (e) { console.warn(e); }
+}
+function netSendU(str) { for (const P of Object.values(NET.peers)) if (P.open && P.u.readyState === 'open') { try { P.u.send(str); } catch (e) { } } }
+function netSendC(str) { for (const P of Object.values(NET.peers)) if (P.open && P.c.readyState === 'open') { try { P.c.send(str); } catch (e) { } } }
+function onMsg(q, data) {
+  let m; try { m = JSON.parse(data); } catch (e) { return; }
+  if (m.t === 's') {
+    const k = G.karts.find(x => x.id === q); if (!k || k.local) return;
+    k.tx = m.x; k.tz = m.z; k.ta = m.a; k.tvx = m.vx; k.tvz = m.vz; k.boosting = !!m.b; k.dl = m.d || 0; k.tot = m.tt; if (m.f) k.fin = m.f; k.last = performance.now(); k.gone = false;
+    if (G.state !== 'idle' && k.fin && G.resultOn === undefined) { /* noop */ }
+  } else if (m.t === 'go') { beginMulti(m); }
+  else if (m.t === 'map') { NET.mapId = m.m; loadMap(m.m); if (G.state === 'idle') renderRoom(); }
+}
+
+/* ---------------------------------------------------------------- 관중 함성 (WebAudio 노이즈, 관중석 가까울수록 커짐) */
+const CA = { ctx: null, g: null, on: false };
+function crowdOn(on) {
+  try {
+    if (!CA.ctx) {
+      CA.ctx = new (window.AudioContext || window.webkitAudioContext)(); const sr = CA.ctx.sampleRate, b = CA.ctx.createBuffer(1, sr * 2, sr), d = b.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const src = CA.ctx.createBufferSource(); src.buffer = b; src.loop = true; const f = CA.ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 700; f.Q.value = .4;
+      CA.g = CA.ctx.createGain(); CA.g.gain.value = 0; src.connect(f); f.connect(CA.g); CA.g.connect(CA.ctx.destination); src.start();
+    }
+    CA.ctx.resume(); CA.on = on; if (!on) CA.g.gain.value = 0;
+  } catch (e) { }
+}
+function crowdUpdate(now) {
+  if (!CA.on || !G.me) return; let d = 1e9; for (const p of G.world.stands) d = Math.min(d, Math.hypot(p[0] - G.me.x, p[1] - G.me.z));
+  CA.g.gain.setTargetAtTime(.025 + .1 * clamp(1 - d / 130, 0, 1) * (.8 + .2 * Math.sin(now / 400)), CA.ctx.currentTime, .15);
+}
+
+/* ---------------------------------------------------------------- 음성 대화 (M) */
+const VOICE = { on: false, stream: null, track: null };
+function toast(t) { const e = $('#toast'); e.textContent = t; e.style.opacity = 1; clearTimeout(toast.t); toast.t = setTimeout(() => e.style.opacity = 0, 2200); }
+async function toggleMic() {
+  if (!NET.active) { toast('멀티플레이 방에서 마이크로 대화할 수 있어요'); return; }
+  if (!VOICE.track) {
+    try { VOICE.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); VOICE.track = VOICE.stream.getAudioTracks()[0]; }
+    catch (e) { toast('마이크 권한을 허용해 주세요'); return; }
+  }
+  VOICE.on = !VOICE.on; VOICE.track.enabled = VOICE.on;
+  for (const P of Object.values(NET.peers)) if (P.as) P.as.replaceTrack(VOICE.track).catch(() => { });
+  toast(VOICE.on ? '🎙 마이크 켜짐 (M으로 끄기)' : '🔇 마이크 꺼짐');
+}
+
+/* ---------------------------------------------------------------- boot */
+loadMap(0); requestAnimationFrame(loop);
+</script>
+</body>
+</html>
