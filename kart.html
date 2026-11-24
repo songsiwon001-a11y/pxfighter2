@@ -809,11 +809,8 @@ const dec = d => { const o = { id: d.name.split('/').pop() }; for (const [k, v] 
 const errMsg = e => `Firestore 연결 실패: ${e.message}. (보안 규칙에서 kartRooms 컬렉션 읽기/쓰기를 허용해야 해요)`;
 
 /* ---------------------------------------------------------------- NET (lobby + WebRTC mesh) */
-const NET = { pid: rid(), room: null, host: false, peers: {}, players: [], active: false, paused: false, mapId: 0, roomName: '', timers: [], seen: new Set(), polling: false, grace: 0, nextPoll: 0, pollT: null };
-const ICE = { iceCandidatePoolSize: 2, iceServers: [
-  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
-  { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' } // 공개 TURN(무료). 안정적으로 쓰려면 본인 TURN 서버로 교체
-] };
+const NET = { pid: rid(), room: null, host: false, peers: {}, players: [], active: false, paused: false, mapId: 0, roomName: '', timers: [], seen: new Set(), polling: false, grace: 0, nextPoll: 0, pollT: null, early: {}, dialing: {}, lastRoomPoll: 0 };
+/* ICE 설정은 아래 WebRTC 블록(rtcCfg)에서 관리 */
 const STALE = 30000;
 const fresh = p => p.id === NET.pid || Date.now() < NET.grace || Date.now() - p.t < STALE;
 
@@ -890,32 +887,37 @@ async function querySignals() {
   return (await r.json()).filter(x => x.document).map(x => dec(x.document));
 }
 async function poll() {
-  if (!NET.active || NET.paused || NET.polling) { if (NET.active) schedulePoll(2000); return; }
+  if (!NET.active || NET.paused || NET.polling) { if (NET.active) schedulePoll(700); return; }
   NET.polling = true; let connecting = false;
   try {
-    const [rd, pl, sg] = await Promise.all([fs('GET', `kartRooms/${NET.room}`), fs('GET', `kartRooms/${NET.room}/players`, null, '&pageSize=50'), querySignals()]);
+    const sg = await querySignals();
     if (!NET.active) return;
-    if (!rd && !NET.host) { leaveRoom(); showSec('s-rooms'); refreshRooms(); $('#roomsMsg').textContent = '방장이 방을 닫았어요.'; return; }
-    if (rd && !NET.host) { const room = dec(rd); NET.mapId = room.map; NET.roomName = room.name; }
-    NET.players = ((pl && pl.documents) || []).map(dec).filter(fresh);
-    if (!NET.players.find(p => p.id === NET.pid)) NET.players.push({ id: NET.pid, name: ME.name, color: ME.color, kart: ME.kart | 0, t: Date.now() });
     for (const s of sg) {
       if (NET.seen.has(s.id)) continue; NET.seen.add(s.id);
       fs('DELETE', `kartRooms/${NET.room}/signals/${s.id}`).catch(() => { });
-      handleSig(s);
+      if (s.type === 'ice') handleIce(s); else handleSig(s);
     }
-    const ids = NET.players.map(p => p.id).filter(i => i !== NET.pid);
-    for (const q of ids) {
-      const P = NET.peers[q];
-      if (!P) { if (NET.pid < q) initiate(q); }
-      else if (!P.open && Date.now() - P.t > 20000) { closePeer(q); if (NET.pid < q) initiate(q); }
+    connecting = Object.values(NET.peers).some(P => !P.open);
+    if (connecting || Date.now() - (NET.lastRoomPoll || 0) > 1500) {
+      NET.lastRoomPoll = Date.now();
+      const [rd, pl] = await Promise.all([fs('GET', `kartRooms/${NET.room}`), fs('GET', `kartRooms/${NET.room}/players`, null, '&pageSize=50')]);
+      if (!NET.active) return;
+      if (!rd && !NET.host) { leaveRoom(); showSec('s-rooms'); refreshRooms(); $('#roomsMsg').textContent = '방장이 방을 닫았어요.'; return; }
+      if (rd && !NET.host) { const room = dec(rd); NET.mapId = room.map; NET.roomName = room.name; }
+      NET.players = ((pl && pl.documents) || []).map(dec).filter(fresh);
+      if (!NET.players.find(p => p.id === NET.pid)) NET.players.push({ id: NET.pid, name: ME.name, color: ME.color, kart: ME.kart | 0, t: Date.now() });
+      const ids = NET.players.map(p => p.id).filter(i => i !== NET.pid);
+      for (const q of ids) {
+        const P = NET.peers[q];
+        if (!P) { if (NET.pid < q && !NET.dialing[q]) initiate(q); }
+        else if (!P.open && NET.pid < q && (P.st === 'failed' || Date.now() - P.t > 40000)) { closePeer(q); initiate(q, true); }
+      }
+      for (const q of Object.keys(NET.peers)) if (!ids.includes(q)) closePeer(q);
     }
-    for (const q of Object.keys(NET.peers)) if (!ids.includes(q)) closePeer(q);
-    connecting = ids.some(q => !NET.peers[q] || !NET.peers[q].open);
     $('#roomMsg').textContent = '';
     renderRoom();
   } catch (e) { $('#roomMsg').textContent = errMsg(e); }
-  finally { NET.polling = false; if (NET.active) schedulePoll(connecting ? 1500 : 10000); }
+  finally { NET.polling = false; if (NET.active) schedulePoll(connecting ? 700 : 1500); }
 }
 
 function renderRoom() {
@@ -962,44 +964,122 @@ function backToRoom() {
 }
 
 /* WebRTC */
-function gathered(pc) {
+const STUN_LIST = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }];
+const TURN_LIST = [ // webcraft3d.html 의 MY_ICE 두 서버 (작동 확인됨)
+  { urls: ['turn:global.relay.metered.ca:80', 'turn:global.relay.metered.ca:80?transport=tcp', 'turn:global.relay.metered.ca:443', 'turns:global.relay.metered.ca:443?transport=tcp'], username: 'd8c05a0ac6cf010c23f099a5', credential: 'P5Pt+bfENlCskiKn' },
+  { urls: ['turn:free.expressturn.com:3478', 'turn:free.expressturn.com:3478?transport=tcp'], username: '000000002108798919', credential: 'R1mP4K0iwreXiteAX0SN8VCneUQ=' }
+];
+let relayOK = null, relayP = null;
+function probeTurn(srv) {
   return new Promise(res => {
-    if (pc.iceGatheringState === 'complete') return res();
-    const f = () => { if (pc.iceGatheringState === 'complete') { pc.removeEventListener('icegatheringstatechange', f); res(); } };
-    pc.addEventListener('icegatheringstatechange', f); setTimeout(res, 7000);
+    let done = false, pc = null;
+    const end = ok => { if (done) return; done = true; try { pc && pc.close(); } catch (e) { } res(ok); };
+    setTimeout(() => end(false), 5000);
+    try {
+      pc = new RTCPeerConnection({ iceServers: [srv], iceTransportPolicy: 'relay' });
+      pc.createDataChannel('x');
+      pc.onicecandidate = e => { if (e.candidate && / typ relay /.test(e.candidate.candidate)) end(true); };
+      pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') end(false); };
+      pc.createOffer().then(o => pc.setLocalDescription(o)).catch(() => end(false));
+    } catch (e) { end(false); }
   });
 }
-function newPeer(q, init) {
-  const pc = new RTCPeerConnection(ICE), P = { q, pc, c: null, u: null, open: false, t: Date.now(), dead: false, was: false, as: null, au: null };
+function probeAllTurn() {
+  if (!relayP) relayP = Promise.all(TURN_LIST.map(probeTurn)).then(r => {
+    relayOK = TURN_LIST.filter((s, i) => r[i]);
+    console.log('[turn] 작동 확인', relayOK.length + '/' + TURN_LIST.length + '곳');
+    return relayOK;
+  });
+  return relayP;
+}
+function rtcCfg(relay) {
+  return { iceServers: relay && relayOK && relayOK.length ? STUN_LIST.concat(relayOK) : STUN_LIST, iceCandidatePoolSize: 2 };
+}
+function newPeer(q, init, sid, relay) {
+  const pc = new RTCPeerConnection(rtcCfg(relay));
+  const P = { q, sid, pc, c: null, u: null, open: false, t: Date.now(), dead: false, was: false, as: null, au: null, st: '', pending: [], watchdog: 0 };
+  pc.onicecandidate = e => { if (e.candidate && !P.dead) sendSig(q, 'ice', JSON.stringify(e.candidate), sid, relay).catch(() => { }); };
   pc.ontrack = e => { const a = document.createElement('audio'); a.autoplay = true; a.srcObject = new MediaStream([e.track]); document.body.appendChild(a); P.au = a; a.play().catch(() => { }); };
   const chk = () => {
     if (P.dead) return;
     const o = !!(P.c && P.u && P.c.readyState === 'open' && P.u.readyState === 'open');
-    if (o !== P.open) { P.open = o; if (o) P.was = true; else if (P.was) { peerGone(q); return; } renderRoom(); }
+    if (o === P.open) return;
+    P.open = o;
+    if (o) { P.was = true; clearTimeout(P.watchdog); console.log('[p2p] 연결 완료', q, Date.now() - P.t, 'ms', relay ? '(중계)' : '(직접)'); }
+    else if (P.was) { peerGone(q); return; }
+    renderRoom();
   };
   const hook = ch => { ch.onopen = chk; ch.onclose = chk; ch.onmessage = e => onMsg(q, e.data); if (ch.label === 'c') P.c = ch; else P.u = ch; chk(); };
-  if (init) { P.as = pc.addTransceiver('audio', { direction: 'sendrecv' }).sender; if (VOICE.track) P.as.replaceTrack(VOICE.track).catch(() => { }); hook(pc.createDataChannel('c')); hook(pc.createDataChannel('u', { ordered: false, maxRetransmits: 0 })); }
-  else pc.ondatachannel = e => hook(e.channel);
-  pc.oniceconnectionstatechange = () => { P.st = pc.iceConnectionState; if (P.st === 'failed') P.t = 0; renderRoom(); };
+  if (init) {
+    P.as = pc.addTransceiver('audio', { direction: 'sendrecv' }).sender;
+    if (VOICE.track) P.as.replaceTrack(VOICE.track).catch(() => { });
+    hook(pc.createDataChannel('c'));
+    hook(pc.createDataChannel('u', { ordered: false, maxRetransmits: 0 }));
+  } else pc.ondatachannel = e => hook(e.channel);
+  pc.oniceconnectionstatechange = () => { P.st = pc.iceConnectionState; console.log('[p2p]', q, P.st); if (P.st === 'failed') P.t = 0; renderRoom(); };
   pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed' || pc.connectionState === 'closed') chk(); };
   return P;
 }
-function closePeer(q) { const P = NET.peers[q]; if (!P) return; delete NET.peers[q]; P.dead = true; if (P.au) P.au.remove(); try { P.pc.close(); } catch (e) { } }
+function closePeer(q) {
+  const P = NET.peers[q]; if (!P) return;
+  clearTimeout(P.watchdog);
+  delete NET.peers[q]; P.dead = true;
+  if (P.au) P.au.remove();
+  try { P.pc.close(); } catch (e) { }
+}
 function peerGone(q) { closePeer(q); const k = G.karts.find(x => x.id === q); if (k) k.gone = true; renderRoom(); }
-async function sendSig(to, type, sdp) { await fs('POST', `kartRooms/${NET.room}/signals`, enc({ from: NET.pid, to, type, sdp, t: Date.now() })); }
-async function initiate(q) {
-  const P = newPeer(q, true); NET.peers[q] = P;
-  try { const o = await P.pc.createOffer(); await P.pc.setLocalDescription(o); await gathered(P.pc); await sendSig(q, 'offer', JSON.stringify(P.pc.localDescription)); } catch (e) { console.warn(e); }
+async function sendSig(to, type, sdp, sid, relay) {
+  await fs('POST', `kartRooms/${NET.room}/signals`, enc({ from: NET.pid, to, type, sdp, sid, relay: relay ? 1 : 0, t: Date.now() }));
+}
+async function initiate(q, relay = false) {
+  if (relay) { NET.dialing[q] = 1; await probeAllTurn(); delete NET.dialing[q]; }
+  const sid = rid(), P = newPeer(q, true, sid, relay);
+  NET.peers[q] = P;
+  // 직접(STUN) 시도는 4초, 중계 포함 시도는 8초 안에 안 붙으면 다시 시도
+  P.watchdog = setTimeout(() => {
+    if (P.open || P.dead || NET.peers[q] !== P) return;
+    closePeer(q);
+    initiate(q, true);
+  }, relay ? 8000 : 4000);
+  try {
+    const o = await P.pc.createOffer();
+    await P.pc.setLocalDescription(o);
+    await sendSig(q, 'offer', JSON.stringify(P.pc.localDescription), sid, relay);
+  } catch (e) { console.warn(e); }
+}
+function flushIce(P) {
+  const key = P.q + ':' + P.sid;
+  const early = NET.early[key] || []; delete NET.early[key];
+  const all = [...early, ...P.pending]; P.pending = [];
+  for (const c of all) P.pc.addIceCandidate(c).catch(() => { });
+}
+function handleIce(s) {
+  const c = JSON.parse(s.sdp), P = NET.peers[s.from];
+  if (!P || P.sid !== s.sid) { const k = s.from + ':' + s.sid; (NET.early[k] = NET.early[k] || []).push(c); return; }
+  if (!P.pc.remoteDescription) P.pending.push(c);
+  else P.pc.addIceCandidate(c).catch(() => { });
 }
 async function handleSig(s) {
   const q = s.from;
   try {
     if (s.type === 'offer') {
-      closePeer(q); const P = newPeer(q, false); NET.peers[q] = P;
-      await P.pc.setRemoteDescription(JSON.parse(s.sdp)); for (const t of P.pc.getTransceivers()) if (t.receiver.track && t.receiver.track.kind === 'audio') { t.direction = 'sendrecv'; P.as = t.sender; if (VOICE.track) t.sender.replaceTrack(VOICE.track).catch(() => { }); } const a = await P.pc.createAnswer(); await P.pc.setLocalDescription(a); await gathered(P.pc);
-      await sendSig(q, 'answer', JSON.stringify(P.pc.localDescription));
+      const cur = NET.peers[q];
+      if (cur && cur.sid === s.sid) return;
+      if (s.relay) await probeAllTurn();
+      closePeer(q);
+      const P = newPeer(q, false, s.sid, !!s.relay); NET.peers[q] = P;
+      await P.pc.setRemoteDescription(JSON.parse(s.sdp));
+      for (const t of P.pc.getTransceivers()) if (t.receiver.track && t.receiver.track.kind === 'audio') { t.direction = 'sendrecv'; P.as = t.sender; if (VOICE.track) t.sender.replaceTrack(VOICE.track).catch(() => { }); }
+      flushIce(P);
+      const a = await P.pc.createAnswer();
+      await P.pc.setLocalDescription(a);
+      await sendSig(q, 'answer', JSON.stringify(P.pc.localDescription), s.sid, !!s.relay);
     } else if (s.type === 'answer') {
-      const P = NET.peers[q]; if (P && P.pc.signalingState === 'have-local-offer') await P.pc.setRemoteDescription(JSON.parse(s.sdp));
+      const P = NET.peers[q];
+      if (P && P.sid === s.sid && P.pc.signalingState === 'have-local-offer') {
+        await P.pc.setRemoteDescription(JSON.parse(s.sdp));
+        flushIce(P);
+      }
     }
   } catch (e) { console.warn(e); }
 }
